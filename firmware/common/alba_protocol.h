@@ -41,11 +41,20 @@
 /* Valores especiales: "no hay medicion valida" */
 #define ALBA_BPM_INVALID   0u
 #define ALBA_SPO2_INVALID  0xFFu
+#define ALBA_BAT_INVALID   0xFFu   /* la pulsera no sabe su nivel de bateria (sin divisor) */
+
+/* Hora minima aceptada en un mensaje HORA (2020-01-01 UTC): un robot sin hora
+ * real enviaria 0 o 1970, y eso no debe darle la hora a la pulsera. */
+#define ALBA_EPOCH_MIN_S   1577836800u
 
 /* Tipo de mensaje (campo alba_hdr_t.type) */
 typedef enum {
+    /* pulsera -> robot */
     ALBA_MSG_TELEMETRIA = 1,
-    ALBA_MSG_EVENTO     = 2
+    ALBA_MSG_EVENTO     = 2,
+    /* robot -> pulsera */
+    ALBA_MSG_HORA       = 3,   /* da la hora real a la pulsera (no tiene RTC)          */
+    ALBA_MSG_CANCELAR   = 4    /* el paciente dijo "estoy bien": cancela la caida      */
 } alba_msg_type_t;
 
 /* Tipo de alerta (campo alba_event_t.alerta_tipo) */
@@ -81,7 +90,7 @@ typedef struct __attribute__((packed)) {
     uint32_t   timestamp_ms;  /* ms desde el arranque (se desborda a los ~49 dias) */
     uint8_t    bpm;           /* ALBA_BPM_INVALID si no hay lectura confiable      */
     uint8_t    spo2;          /* 0-100, o ALBA_SPO2_INVALID                        */
-    uint8_t    bateria_pct;   /* 0-100                                             */
+    uint8_t    bateria_pct;   /* 0-100, o ALBA_BAT_INVALID si no se mide           */
 } alba_telemetry_t;
 
 /* Evento critico (12 bytes) */
@@ -93,6 +102,24 @@ typedef struct __attribute__((packed)) {
     uint8_t    confirmacion;  /* alba_confirmacion_t                               */
 } alba_event_t;
 
+/* Hora real, robot -> pulsera (10 bytes). Se envia al emparejar y cada pocas
+ * horas; la pulsera cuenta los segundos con su propio reloj entre mensajes. */
+typedef struct __attribute__((packed)) {
+    alba_hdr_t hdr;
+    uint32_t   epoch_s;           /* segundos Unix UTC (>= ALBA_EPOCH_MIN_S)           */
+    int16_t    utc_offset_min;    /* zona horaria en minutos (Ecuador = -300)          */
+} alba_time_t;
+
+/* Cancelar una caida, robot -> pulsera (6 bytes). `ref_seq` es el seq del
+ * evento PENDIENTE que se cancela: asi un CANCELAR tardio o repetido no puede
+ * cancelar una caida distinta. */
+typedef struct __attribute__((packed)) {
+    alba_hdr_t hdr;
+    uint16_t   ref_seq;
+} alba_cancel_t;
+
+ALBA_STATIC_ASSERT(sizeof(alba_time_t)      == 10, "alba_time_t debe medir 10 bytes");
+ALBA_STATIC_ASSERT(sizeof(alba_cancel_t)    == 6,  "alba_cancel_t debe medir 6 bytes");
 ALBA_STATIC_ASSERT(sizeof(alba_hdr_t)       == 4,  "alba_hdr_t debe medir 4 bytes");
 ALBA_STATIC_ASSERT(sizeof(alba_telemetry_t) == 11, "alba_telemetry_t debe medir 11 bytes");
 ALBA_STATIC_ASSERT(sizeof(alba_event_t)     == 12, "alba_event_t debe medir 12 bytes");

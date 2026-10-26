@@ -33,6 +33,10 @@ extern "C" {
 
 #define WAKE_HIST_LEN 24     /* historial de lecturas aceptadas */
 
+/** Valor de `hour_local` que significa "la pulsera aun no sabe la hora"
+ *  (cualquier valor > 23 se trata igual). */
+#define WAKE_HOUR_UNKNOWN 0xFFu
+
 /** Una lectura de signos vitales. */
 typedef struct {
     uint32_t t_s;        /* segundos (monotonicos; vale desde el arranque o epoch) */
@@ -64,6 +68,8 @@ typedef struct {
     uint16_t rising_timeout_s;      /* sospecha sin confirmar vuelve a SLEEP (900)    */
     /* contexto */
     uint8_t  hour_min, hour_max;    /* ventana horaria local de la manana (4 - 11)    */
+    bool     allow_unknown_hour;    /* hora desconocida: true = no aplicar la ventana (true)
+                                       false = bloquear disparos hasta recibir la hora   */
     uint32_t refractory_s;          /* minimo entre dos disparos (21600 = 6 h)        */
     /* periodo de medicion recomendado por estado */
     uint16_t period_sleep_s;        /* 60  */
@@ -93,8 +99,10 @@ void wake_config_default(wake_config_t *cfg);
 void wake_detector_init(wake_detector_t *w, const wake_config_t *cfg);
 
 /** Procesa una lectura. `hour_local` es la hora local (0-23); la pulsera la
- *  recibe del robot, que sincroniza la hora real. Devuelve TRIGGER una sola
- *  vez por despertar. */
+ *  recibe del robot (ver band_clock). Si aun no la tiene, pasar
+ *  WAKE_HOUR_UNKNOWN: segun `allow_unknown_hour` se omite la ventana horaria
+ *  (el resto de criterios sigue vigente) o se bloquea el disparo.
+ *  Devuelve TRIGGER una sola vez por despertar. */
 wake_event_t wake_detector_update(wake_detector_t *w, const wake_vital_t *v, uint8_t hour_local);
 
 /** Cada cuantos segundos conviene medir segun el estado actual. */

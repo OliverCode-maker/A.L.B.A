@@ -100,6 +100,7 @@ void wake_config_default(wake_config_t *c)
     c->rising_timeout_s       = 900;
     c->hour_min               = 4;
     c->hour_max               = 11;
+    c->allow_unknown_hour     = true;
     c->refractory_s           = 6u * 3600u;
     c->period_sleep_s         = 60;
     c->period_rising_s        = 15;
@@ -141,7 +142,9 @@ wake_event_t wake_detector_update(wake_detector_t *w, const wake_vital_t *v, uin
     const float med   = (float)median_last(w, 3);
     const float slope = slope_bpm_per_min(w, v->t_s);
     const bool  quiet = v->act_pct < c->act_quiet_pct;
-    const bool  in_window = (hour_local >= c->hour_min) && (hour_local <= c->hour_max);
+    const bool  in_window = (hour_local > 23u)
+                          ? c->allow_unknown_hour
+                          : (hour_local >= c->hour_min) && (hour_local <= c->hour_max);
     const bool  refractory_ok = !w->has_triggered ||
                                 ((v->t_s - w->t_last_trigger) > c->refractory_s);
 
