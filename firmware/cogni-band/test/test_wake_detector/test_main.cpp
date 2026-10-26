@@ -166,6 +166,41 @@ void test_outside_morning_window_does_not_trigger(void)
     TEST_ASSERT_FALSE(r.rising_seen);                    // ni siquiera sube la frecuencia de medicion
 }
 
+void test_unknown_hour_skips_window_by_default(void)
+{
+    const Run r = run(hr_ramp, act_after_t0, WAKE_HOUR_UNKNOWN, 3600);   // pulsera sin hora todavia
+    TEST_ASSERT_EQUAL_INT(1, r.triggers);
+}
+
+void test_unknown_hour_blocks_when_configured(void)
+{
+    wake_config_t cfg;
+    wake_config_default(&cfg);
+    cfg.allow_unknown_hour = false;
+    wake_detector_init(&w, &cfg);
+
+    const Run r = run(hr_ramp, act_after_t0, WAKE_HOUR_UNKNOWN, 3600);
+    TEST_ASSERT_EQUAL_INT(0, r.triggers);
+    TEST_ASSERT_FALSE(r.rising_seen);
+}
+
+void test_any_hour_above_23_counts_as_unknown(void)
+{
+    const Run r = run(hr_ramp, act_after_t0, 24, 3600);
+    TEST_ASSERT_EQUAL_INT(1, r.triggers);
+}
+
+void test_known_hour_edges_of_window(void)
+{
+    TEST_ASSERT_EQUAL_INT(1, run(hr_ramp, act_after_t0, 4, 3600).triggers);    // primer minuto de la ventana
+    wake_detector_init(&w, NULL);  rng = 777;
+    TEST_ASSERT_EQUAL_INT(1, run(hr_ramp, act_after_t0, 11, 3600).triggers);   // ultimo
+    wake_detector_init(&w, NULL);  rng = 777;
+    TEST_ASSERT_EQUAL_INT(0, run(hr_ramp, act_after_t0, 12, 3600).triggers);   // fuera
+    wake_detector_init(&w, NULL);  rng = 777;
+    TEST_ASSERT_EQUAL_INT(0, run(hr_ramp, act_after_t0, 3, 3600).triggers);
+}
+
 void test_no_movement_means_no_trigger_and_sampling_relaxes(void)
 {
     const Run r = run(hr_ramp, act_zero, 7, 3600);       // FC sube pero sin actigrafia que lo corrobore
@@ -223,6 +258,10 @@ int main(int, char **)
     RUN_TEST(test_high_basal_patient_small_rise_does_not_trigger);
     RUN_TEST(test_high_basal_patient_large_rise_triggers);
     RUN_TEST(test_outside_morning_window_does_not_trigger);
+    RUN_TEST(test_unknown_hour_skips_window_by_default);
+    RUN_TEST(test_unknown_hour_blocks_when_configured);
+    RUN_TEST(test_any_hour_above_23_counts_as_unknown);
+    RUN_TEST(test_known_hour_edges_of_window);
     RUN_TEST(test_no_movement_means_no_trigger_and_sampling_relaxes);
     RUN_TEST(test_bad_quality_readings_are_discarded);
     RUN_TEST(test_out_of_range_bpm_is_discarded_even_with_good_quality);
