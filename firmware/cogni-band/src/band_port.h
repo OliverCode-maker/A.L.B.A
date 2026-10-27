@@ -6,7 +6,7 @@
  *
  *   quien las implementa                 que son
  *   ----------------------------------   ---------------------------------
- *   port_arduino.cpp / port_host.cpp     tiempo y log
+ *   port_idf.cpp / port_host.cpp         tiempo y log
  *   port_sim.cpp          (BAND_SIM=1)   IMU, PPG, bateria y robot simulados
  *   (por escribir)        (BAND_SIM=0)   port_mpu6050, port_max30102, port_espnow
  */

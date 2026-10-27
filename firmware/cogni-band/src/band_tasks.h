@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/** Crea colas, mutex y las cuatro tareas. Llamar una vez desde setup(). */
+/** Crea colas, mutex y las cuatro tareas. Llamar una vez desde app_main(). */
 bool band_tasks_start(void);
 
 /** La radio (callback de ESP-NOW) o el robot simulado entregan aqui lo que

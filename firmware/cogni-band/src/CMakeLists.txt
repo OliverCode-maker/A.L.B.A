@@ -1,0 +1,27 @@
+idf_component_register(
+    SRCS
+        "main.cpp"
+        "band_tasks.cpp"
+        "port_idf.cpp"
+        "port_sim.cpp"
+        "../lib/band_activity/band_activity.c"
+        "../lib/band_alerts/band_alerts.c"
+        "../lib/band_battery/band_battery.c"
+        "../lib/band_clock/band_clock.c"
+        "../lib/fall_detector/fall_detector.c"
+        "../lib/wake_detector/wake_detector.c"
+    INCLUDE_DIRS
+        "../include"
+        "."
+        "../lib/band_activity"
+        "../lib/band_alerts"
+        "../lib/band_battery"
+        "../lib/band_clock"
+        "../lib/fall_detector"
+        "../lib/wake_detector"
+        "../../common"
+    REQUIRES
+        esp_timer
+        freertos
+        log
+)

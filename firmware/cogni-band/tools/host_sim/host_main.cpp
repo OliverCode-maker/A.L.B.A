@@ -1,4 +1,4 @@
-/* Arranque en el PC: crea las mismas tareas que setup() y corre N segundos. */
+/* Arranque en el PC: crea las mismas tareas que app_main() y corre N segundos. */
 #include <stdio.h>
 #include <stdlib.h>
 

@@ -1,6 +1,7 @@
 # Arquitectura FreeRTOS de la pulsera (cogni-band)
 
-Placa: **ESP32-S3 Super Mini** (PlatformIO: `lolin_s3_mini`). I2C en SDA = GPIO6, SCL = GPIO7;
+Placa: **ESP32-S3 Super Mini** (PlatformIO con ESP-IDF: `lolin_s3_mini`).
+I2C en SDA = GPIO6, SCL = GPIO7;
 MPU6050 y MAX30102 comparten el bus y no tienen el pin INT conectado (se leen por sondeo).
 Pines en `include/band_pins.h`, parametros en `include/band_config.h`.
 
@@ -84,7 +85,8 @@ implementan esas funciones y se pone `BAND_SIM=0`, sin tocar las tareas.
 
 ## Como verlo
 
-**En la placa:** `pio run -t upload` y `pio device monitor`. Veras en ~100 s: la hora, una caida
+**En la placa:** `pio run -e lolin-s3-mini -t upload` y
+`pio device monitor -e lolin-s3-mini`. Veras en ~100 s: la hora, una caida
 confirmada, otra cancelada por el robot, bateria baja y un despertar. Cada linea `[ROBOT]` es lo que el
 robot publicaria por MQTT.
 
