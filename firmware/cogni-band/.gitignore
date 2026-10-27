@@ -3,3 +3,6 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# copia descargada de FreeRTOS-Kernel y binarios de la prueba en el PC
+tools/host_sim/.cache/
