@@ -10,16 +10,16 @@
  * BAND_SIM = 1: el IMU, el PPG, la bateria y el robot son SIMULADOS (guion en
  *               port_sim.c). Sirve para ver todo el flujo en el monitor
  *               serie sin sensores ni robot.
- * BAND_SIM = 0: usa los drivers reales (aun por escribir: port_mpu6050,
- *               port_max30102, port_espnow). Ahora mismo no compila el enlace.
+ * BAND_SIM = 0: usa los sensores reales (MPU6050 y MAX30102); la radio y la
+ *               medicion de bateria quedan deshabilitadas hasta integrarlas.
  * BAND_SIM_FAST = 1: guion comprimido (~100 s) y detector de vigilia con
  *               ventanas cortas, solo para la demo. 0 = tiempos reales
  *               (el despertar tarda ~10 min en aparecer). */
-#ifndef BAND_SIM
-#define BAND_SIM        1
+#ifndef BAND_SIM1
+#define BAND_SIM1        0
 #endif
-#ifndef BAND_SIM_FAST
-#define BAND_SIM_FAST   1
+#ifndef BAND_SIM_FAST1
+#define BAND_SIM_FAST1   0
 #endif
 
 /* ---- Periodos ---------------------------------------------------------------*/

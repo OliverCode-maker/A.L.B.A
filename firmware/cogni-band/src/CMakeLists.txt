@@ -4,6 +4,11 @@ idf_component_register(
         "band_tasks.c"
         "port_idf.c"
         "port_sim.c"
+        "port_battery.c"
+        "port_espnow.c"
+        "port_i2c.c"
+        "port_mpu6050.c"
+        "port_max30102.c"
         "../lib/band_activity/band_activity.c"
         "../lib/band_alerts/band_alerts.c"
         "../lib/band_battery/band_battery.c"
@@ -21,6 +26,7 @@ idf_component_register(
         "../lib/wake_detector"
         "../../common"
     REQUIRES
+        esp_driver_i2c
         esp_timer
         freertos
         log
