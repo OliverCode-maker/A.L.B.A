@@ -28,9 +28,16 @@
 #define MAX30102_SAMPLE_COUNT     500u
 #define MAX30102_MAX_PEAKS        32u
 #define MAX30102_FIFO_CAPACITY    32u
-#define MAX30102_SAMPLE_PERIOD_MS 50u
+#define MAX30102_SAMPLE_PERIOD_MS 10u
 #define MAX30102_TIMEOUT_MS       7000u
 #define MAX30102_RETRY_MS         5000u
+
+
+/* Umbrales iniciales; deben calibrarse con el sensor real. */
+#define MAX30102_IR_PRESENCE_MIN       15000.0f
+#define MAX30102_IR_PULSE_MIN          1000.0f
+#define MAX30102_IR_PULSE_VARIATION    0.003f
+#define MAX30102_SQI_MIN               20u
 
 typedef struct {
     uint32_t red;
@@ -169,7 +176,7 @@ static uint8_t estimate_pulse(const float mean_ir, const float deviation_ir,
 {
     if (mean_ir < 1000.0f || deviation_ir < mean_ir * 0.001f) return 0u;
 
-    const float threshold = deviation_ir * 0.25f;
+    const float threshold = deviation_ir * 0.12f;
     size_t peaks[MAX30102_MAX_PEAKS];
     float peak_strength[MAX30102_MAX_PEAKS];
     size_t peak_count = 0;
@@ -210,8 +217,12 @@ static uint8_t estimate_pulse(const float mean_ir, const float deviation_ir,
             valid_intervals++;
         }
     }
-    if (valid_intervals == 0u) return 0u;
-
+    if (valid_intervals == 0u) {
+    port_log("[max30102] diagnostico: picos=%u intervalos_validos=%u",
+             (unsigned)peak_count,
+             (unsigned)valid_intervals);
+    return 0u;
+}
     const float mean_interval = (float)interval_sum / (float)valid_intervals;
     float deviation = 0.0f;
     for (size_t i = 1; i < peak_count; i++) {
@@ -246,27 +257,68 @@ bool port_ppg_read(uint8_t *bpm, uint8_t *spo2, uint8_t *sqi)
         return false;
     }
 
+    
     const float mean_ir = signal_mean(true);
     const float mean_red = signal_mean(false);
     const float deviation_ir = signal_deviation(true, mean_ir);
     const float deviation_red = signal_deviation(false, mean_red);
-    *bpm = estimate_pulse(mean_ir, deviation_ir, sqi);
-    if (*bpm == 0u) {
-        port_log("[max30102] sin pulso valido (IR=%.0f, ruido=%.0f)",
-                 (double)mean_ir, (double)deviation_ir);
+
+    /* Comprobar si hay una señal infrarroja suficiente. */
+    if (mean_ir < MAX30102_IR_PRESENCE_MIN) {
+        port_log("[max30102] sin presencia: IR=%.0f",
+                 (double)mean_ir);
         return false;
     }
 
-    /* Ratio-of-ratios estimate; validate/calibrate against a reference oximeter. */
-    if (mean_ir > 0.0f && mean_red > 0.0f && deviation_ir > 0.0f) {
-        const float ratio = (deviation_red / mean_red) / (deviation_ir / mean_ir);
-        const float estimate = 110.0f - 25.0f * ratio;
-        if (ratio >= 0.2f && ratio <= 1.6f && estimate >= 70.0f && estimate <= 100.0f)
-            *spo2 = (uint8_t)(estimate + 0.5f);
+    /* Comprobar que exista variacion suficiente para el pulso. */
+    
+    if (deviation_ir < mean_ir * MAX30102_IR_PULSE_VARIATION) {
+        port_log("[max30102] presencia probable, pulso no valido");
+        return false;
     }
-    port_log("[max30102] BPM=%u SpO2=%u SQI=%u",
-             (unsigned)*bpm, (unsigned)*spo2, (unsigned)*sqi);
+    *bpm = estimate_pulse(mean_ir, deviation_ir, sqi);
+
+
+    /* Estimar la frecuencia cardiaca. */
+    if (*bpm == 0u || *sqi < MAX30102_SQI_MIN) {
+    port_log("[max30102] calidad insuficiente: "
+             "IR=%.0f desviacion=%.0f BPM=%u SQI=%u minimo=%u",
+             (double)mean_ir,
+             (double)deviation_ir,
+             (unsigned)*bpm,
+             (unsigned)*sqi,
+             (unsigned)MAX30102_SQI_MIN);
+
+    *bpm = 0u;
+    *spo2 = ALBA_SPO2_INVALID;
+    *sqi = 0u;
+    return false;
+}
+
+    /* Estimar SpO2 de forma experimental. */
+    if (mean_red > 0.0f && deviation_red > 0.0f &&
+        deviation_ir > 0.0f) {
+        const float ratio =
+            (deviation_red / mean_red) /
+            (deviation_ir / mean_ir);
+
+        const float estimate = 110.0f - 25.0f * ratio;
+
+        if (ratio >= 0.2f && ratio <= 1.6f &&
+            estimate >= 70.0f && estimate <= 100.0f) {
+            *spo2 = (uint8_t)(estimate + 0.5f);
+        }
+    }
+
+    port_log("[max30102] BPM=%u SpO2=%u SQI=%u IR=%.0f",
+             (unsigned)*bpm,
+             (unsigned)*spo2,
+             (unsigned)*sqi,
+             (double)mean_ir);
+
     return true;
+
+
 }
 
 #endif /* !BAND_SIM */
