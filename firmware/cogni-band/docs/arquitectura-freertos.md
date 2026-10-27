@@ -75,7 +75,7 @@ la da por desconocida si pasan 48 h.
 |-------|--------|
 | Detectores, protocolo, codec, reloj, bateria, actigrafia | Real, con pruebas en el PC (`pio test -e native`) |
 | Tareas y colas | Real; probadas con FreeRTOS en el PC (`tools/host_sim/check.sh`) |
-| IMU, PPG, bateria, robot | **Simulados** (`src/port_sim.cpp`, `BAND_SIM=1`) |
+| IMU, PPG, bateria, robot | **Simulados** (`src/port_sim.c`, `BAND_SIM=1`) |
 | Drivers MPU6050 / MAX30102 | Por escribir (hace falta la placa) |
 | ESP-NOW (canal, MAC del robot, ACK) | Por escribir (esperan respuestas de Oliver) |
 | Medicion de bateria | `port_battery_mv()` por escribir; falta confirmar el divisor de resistencias |

@@ -8,7 +8,7 @@
 
 /* ---- Fuentes de datos ------------------------------------------------------
  * BAND_SIM = 1: el IMU, el PPG, la bateria y el robot son SIMULADOS (guion en
- *               port_sim.cpp). Sirve para ver todo el flujo en el monitor
+ *               port_sim.c). Sirve para ver todo el flujo en el monitor
  *               serie sin sensores ni robot.
  * BAND_SIM = 0: usa los drivers reales (aun por escribir: port_mpu6050,
  *               port_max30102, port_espnow). Ahora mismo no compila el enlace.

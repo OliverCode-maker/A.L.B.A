@@ -31,7 +31,7 @@ int main(int argc, char **argv)
 
     if (!band_tasks_start()) { printf("ERROR: no se pudieron crear las tareas\n"); return 1; }
     port_start();
-    xTaskCreate(task_stopper, "stopper", BAND_STACK(4096u), (void *)(size_t)seconds, 1, nullptr);
+    xTaskCreate(task_stopper, "stopper", BAND_STACK(4096u), (void *)(size_t)seconds, 1, NULL);
     vTaskStartScheduler();
     return 1;
 }

@@ -1,5 +1,5 @@
 /**
- * port_idf.cpp
+ * port_idf.c
  * Tiempo y log en la placa (ESP-IDF).
  */
 #include <stdarg.h>

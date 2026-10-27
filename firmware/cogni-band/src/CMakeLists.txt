@@ -1,9 +1,9 @@
 idf_component_register(
     SRCS
-        "main.cpp"
-        "band_tasks.cpp"
-        "port_idf.cpp"
-        "port_sim.cpp"
+        "main.c"
+        "band_tasks.c"
+        "port_idf.c"
+        "port_sim.c"
         "../lib/band_activity/band_activity.c"
         "../lib/band_alerts/band_alerts.c"
         "../lib/band_battery/band_battery.c"

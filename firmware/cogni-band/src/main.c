@@ -1,6 +1,6 @@
 // cogni-band: firmware de la pulsera (ESP32-S3 Super Mini).
 //
-// app_main() solo arranca la arquitectura FreeRTOS (src/band_tasks.cpp); de ahi
+// app_main() solo arranca la arquitectura FreeRTOS (src/band_tasks.c); de ahi
 // en adelante todo lo hacen las tareas. Con BAND_SIM = 1 los sensores y el
 // robot son simulados. Ver band_config.h.
 #include "esp_log.h"
@@ -12,7 +12,7 @@
 
 static const char *TAG = "cogni-band";
 
-extern "C" void app_main(void) {
+void app_main(void) {
   ESP_LOGI(TAG, "ALBA cogni-band: arranque OK");
   ESP_LOGI(TAG,
            "Protocolo v%u | telemetria=%u B | evento=%u B | hora=%u B | cancelar=%u B",

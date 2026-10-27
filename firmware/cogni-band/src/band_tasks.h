@@ -1,7 +1,7 @@
 /**
  * band_tasks.h
  * Arquitectura FreeRTOS de la pulsera. Ver el diagrama y las reglas de
- * propiedad de datos en band_tasks.cpp y en docs/arquitectura-freertos.md.
+ * propiedad de datos en band_tasks.c y en docs/arquitectura-freertos.md.
  */
 #ifndef BAND_TASKS_H
 #define BAND_TASKS_H
