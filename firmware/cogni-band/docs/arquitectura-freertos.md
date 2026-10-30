@@ -1,6 +1,7 @@
 # Arquitectura FreeRTOS de la pulsera (cogni-band)
 
-Placa: **ESP32-S3 Super Mini** (PlatformIO: `lolin_s3_mini`). I2C en SDA = GPIO6, SCL = GPIO7;
+Placa: **ESP32-S3 Super Mini** (PlatformIO con ESP-IDF: `lolin_s3_mini`).
+I2C en SDA = GPIO6, SCL = GPIO7;
 MPU6050 y MAX30102 comparten el bus y no tienen el pin INT conectado (se leen por sondeo).
 Pines en `include/band_pins.h`, parametros en `include/band_config.h`.
 
@@ -74,19 +75,20 @@ la da por desconocida si pasan 48 h.
 |-------|--------|
 | Detectores, protocolo, codec, reloj, bateria, actigrafia | Real, con pruebas en el PC (`pio test -e native`) |
 | Tareas y colas | Real; probadas con FreeRTOS en el PC (`tools/host_sim/check.sh`) |
-| IMU, PPG, bateria, robot | **Simulados** (`src/port_sim.cpp`, `BAND_SIM=1`) |
-| Drivers MPU6050 / MAX30102 | Por escribir (hace falta la placa) |
-| ESP-NOW (canal, MAC del robot, ACK) | Por escribir (esperan respuestas de Oliver) |
-| Medicion de bateria | `port_battery_mv()` por escribir; falta confirmar el divisor de resistencias |
+| IMU y PPG | Reales por I2C con `BAND_SIM=0`; simulados con `BAND_SIM=1` |
+| Drivers MPU6050 / MAX30102 | Integrados; validar lecturas y calibracion en la placa |
+| ESP-NOW | Pendiente; en modo real `port_send()` devuelve `false` |
+| Medicion de bateria | Pendiente de divisor y ADC; en modo real `port_battery_mv()` devuelve `0` |
 
-La frontera esta en `src/band_port.h`: las tareas solo llaman a `port_*`. Para pasar a sensores reales se
-implementan esas funciones y se pone `BAND_SIM=0`, sin tocar las tareas.
+La frontera esta en `src/band_port.h`: las tareas solo llaman a `port_*`.
 
 ## Como verlo
 
-**En la placa:** `pio run -t upload` y `pio device monitor`. Veras en ~100 s: la hora, una caida
-confirmada, otra cancelada por el robot, bateria baja y un despertar. Cada linea `[ROBOT]` es lo que el
-robot publicaria por MQTT.
+**Prueba de sensores en la placa:** el entorno `lolin-s3-mini` compila con
+`BAND_SIM=0`; ejecuta `pio run -e lolin-s3-mini -t upload` y
+`pio device monitor -e lolin-s3-mini`. El MPU6050 imprime aceleracion y giroscopio
+cada segundo; el MAX30102 imprime BPM, SpO2 estimada y calidad al completar cada lectura.
+ESP-NOW y la medicion de bateria aun no estan integrados en este modo.
 
 **En el PC (sin placa):** `tools/host_sim/run.sh` ejecuta las mismas tareas sobre FreeRTOS real (puerto
 POSIX; la primera vez descarga el kernel de GitHub). `tools/host_sim/check.sh` lo corre y comprueba que
@@ -96,8 +98,8 @@ paso todo lo esperado. `FAST=0 tools/host_sim/run.sh 1500` usa tiempos reales.
 
 1. **Nucleos del S3.** Hoy las tareas no estan ancladas (`xTaskCreate`). Con ESP-NOW activo, probar
    `tFall` en el nucleo 1 y la radio en el 0 (`xTaskCreatePinnedToCore`) y medir la fluidez a 100 Hz.
-2. **Bus I2C compartido.** IMU (100 Hz) y PPG (rafagas largas) usan el mismo bus: el driver real debe
-   proteger el bus con un mutex, y `port_ppg_read` no debe bloquear mas de unos 100 ms seguidos o `tFall` se atrasa.
+2. **Bus I2C compartido.** IMU (100 Hz) y PPG (rafagas largas) usan el mismo bus con mutex.
+   `port_ppg_read` cede CPU entre bloques para que `tFall` mantenga su periodo.
 3. **ACK de eventos criticos.** Hoy se reintenta si falla el envio local; falta que el robot confirme la recepcion.
 4. **Modos de energia** (ACTIVO / REPOSO / NO PUESTA) y la tabla de consumo corregida para el informe.
 5. **Tamano de pilas.** Medir en la placa (`uxTaskGetStackHighWaterMark`, se imprime cada 30 s) y ajustar.

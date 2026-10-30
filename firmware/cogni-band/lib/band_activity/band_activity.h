@@ -5,7 +5,7 @@
  * (cada 15-300 s). Sin esto se perderia la actigrafia entre mediciones.
  *
  * C puro y sin bloqueo propio: quien lo comparte entre tareas lo protege con
- * una seccion critica o un mutex (ver band_tasks.cpp).
+ * una seccion critica o un mutex (ver band_tasks.c).
  */
 #ifndef BAND_ACTIVITY_H
 #define BAND_ACTIVITY_H

@@ -1,14 +1,14 @@
 /**
  * band_port.h
- * Frontera entre las tareas (band_tasks.cpp, que no saben de hardware) y lo
+ * Frontera entre las tareas (band_tasks.c, que no saben de hardware) y lo
  * que cambia segun donde corran: la placa real, la simulacion en la placa o
  * el PC.  Las tareas solo llaman a estas funciones.
  *
  *   quien las implementa                 que son
  *   ----------------------------------   ---------------------------------
- *   port_arduino.cpp / port_host.cpp     tiempo y log
- *   port_sim.cpp          (BAND_SIM=1)   IMU, PPG, bateria y robot simulados
- *   (por escribir)        (BAND_SIM=0)   port_mpu6050, port_max30102, port_espnow
+ *   port_idf.c / port_host.c             tiempo y log
+ *   port_sim.c            (BAND_SIM=1)   IMU, PPG, bateria y robot simulados
+ *   ports reales          (BAND_SIM=0)   MPU6050, MAX30102, I2C; radio y bateria pendientes
  */
 #ifndef BAND_PORT_H
 #define BAND_PORT_H

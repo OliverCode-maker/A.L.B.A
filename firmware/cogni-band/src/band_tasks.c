@@ -1,5 +1,5 @@
 /**
- * band_tasks.cpp
+ * band_tasks.c
  * Las cuatro tareas de la pulsera y como se hablan entre si.
  *
  *   IMU --100 Hz--> tFall --------------+
@@ -53,21 +53,24 @@
 static fall_detector_t g_fall;      /* dueno: tFall    */
 static wake_detector_t g_wake;      /* dueno: tVitals  */
 
-static band_clock_t        g_clock;       static SemaphoreHandle_t g_clock_mtx;
-static band_activity_t     g_act;         static SemaphoreHandle_t g_act_mtx;
+static band_clock_t        g_clock;
+static SemaphoreHandle_t g_clock_mtx;
+static band_activity_t     g_act;
+static SemaphoreHandle_t g_act_mtx;
 static band_cancel_gate_t  g_gate;        /* dueno: tComm   */
 static band_battery_t      g_bat;         /* dueno: tSystem */
 
 typedef struct { bool valid; uint8_t bpm, spo2; uint32_t t_s; } latest_t;
-static latest_t g_latest;                 static SemaphoreHandle_t g_latest_mtx;
+static latest_t g_latest;
+static SemaphoreHandle_t g_latest_mtx;
 
 static band_stats_t g_stats;
 
 static QueueHandle_t q_tx, q_rx, q_cmd;
 static TaskHandle_t  h_fall, h_vitals, h_comm, h_system;   /* solo para medir la pila */
 
-enum : uint8_t { TX_ALERT = 1, TX_TELEMETRY = 2 };
-enum : uint8_t { CMD_CANCEL_FALL = 1 };
+enum { TX_ALERT = 1, TX_TELEMETRY = 2 };
+enum { CMD_CANCEL_FALL = 1 };
 
 typedef struct {
     uint8_t      kind;
@@ -116,7 +119,7 @@ static uint8_t hour_now(uint32_t now_ms)
 /* ======================================================================== */
 static void task_fall(void *)
 {
-    fall_detector_init(&g_fall, nullptr);
+    fall_detector_init(&g_fall, NULL);
 
     TickType_t last_wake = xTaskGetTickCount();
     uint32_t   t_act_ms  = port_millis();
@@ -402,7 +405,7 @@ static void task_system(void *)
 /* ======================================================================== */
 bool band_on_receive(const uint8_t *buf, size_t len)
 {
-    if (buf == nullptr || len == 0u || len > BAND_RX_MAX_LEN || q_rx == nullptr) {
+    if (buf == NULL || len == 0u || len > BAND_RX_MAX_LEN || q_rx == NULL) {
         STAT_INC(rx_dropped);
         return false;
     }
@@ -429,9 +432,9 @@ bool band_tasks_start(void)
     if (!g_clock_mtx || !g_act_mtx || !g_latest_mtx || !q_tx || !q_rx || !q_cmd) return false;
 
     bool ok = true;
-    ok &= xTaskCreate(task_comm,   "tComm",   BAND_STACK(BAND_STACK_COMM),   nullptr, BAND_PRIO_COMM,   &h_comm) == pdPASS;
-    ok &= xTaskCreate(task_fall,   "tFall",   BAND_STACK(BAND_STACK_FALL),   nullptr, BAND_PRIO_FALL,   &h_fall) == pdPASS;
-    ok &= xTaskCreate(task_vitals, "tVitals", BAND_STACK(BAND_STACK_VITALS), nullptr, BAND_PRIO_VITALS, &h_vitals) == pdPASS;
-    ok &= xTaskCreate(task_system, "tSystem", BAND_STACK(BAND_STACK_SYSTEM), nullptr, BAND_PRIO_SYSTEM, &h_system) == pdPASS;
+    ok &= xTaskCreate(task_comm,   "tComm",   BAND_STACK(BAND_STACK_COMM),   NULL, BAND_PRIO_COMM,   &h_comm) == pdPASS;
+    ok &= xTaskCreate(task_fall,   "tFall",   BAND_STACK(BAND_STACK_FALL),   NULL, BAND_PRIO_FALL,   &h_fall) == pdPASS;
+    ok &= xTaskCreate(task_vitals, "tVitals", BAND_STACK(BAND_STACK_VITALS), NULL, BAND_PRIO_VITALS, &h_vitals) == pdPASS;
+    ok &= xTaskCreate(task_system, "tSystem", BAND_STACK(BAND_STACK_SYSTEM), NULL, BAND_PRIO_SYSTEM, &h_system) == pdPASS;
     return ok;
 }

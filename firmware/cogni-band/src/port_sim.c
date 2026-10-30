@@ -1,5 +1,5 @@
 /**
- * port_sim.cpp
+ * port_sim.c
  * Mundo simulado (BAND_SIM = 1): un IMU, un sensor de pulso, una bateria y un
  * ROBOT que siguen un guion. Permite ver en el monitor serie, sin ningun
  * sensor ni el robot, el recorrido completo:
@@ -152,12 +152,12 @@ bool port_send(const uint8_t *buf, size_t len)
     if (type == ALBA_MSG_TELEMETRIA) {
         alba_telemetry_t p;
         memcpy(&p, buf, sizeof p);
-        if (alba_telemetry_to_json(&p, nullptr, json, sizeof json) > 0)
+        if (alba_telemetry_to_json(&p, NULL, json, sizeof json) > 0)
             port_log("[ROBOT]  RX telemetria -> MQTT %s", json);
     } else if (type == ALBA_MSG_EVENTO) {
         alba_event_t p;
         memcpy(&p, buf, sizeof p);
-        if (alba_event_to_json(&p, nullptr, json, sizeof json) > 0)
+        if (alba_event_to_json(&p, NULL, json, sizeof json) > 0)
             port_log("[ROBOT]  RX EVENTO     -> MQTT %s", json);
 
         if (p.alerta_tipo == ALBA_ALERTA_CAIDA_DETECTADA && p.confirmacion == ALBA_CONF_PENDIENTE) {
@@ -208,7 +208,7 @@ static void task_sim_robot(void *)
 void port_start(void)
 {
     q_robot = xQueueCreate(2, sizeof(robot_job_t));
-    xTaskCreate(task_sim_robot, "simRobot", BAND_STACK(4096u), nullptr, 1, nullptr);
+    xTaskCreate(task_sim_robot, "simRobot", BAND_STACK(4096u), NULL, 1, NULL);
 }
 
 #endif /* BAND_SIM */

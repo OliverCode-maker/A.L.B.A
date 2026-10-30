@@ -1,7 +1,7 @@
 /**
  * band_tasks.h
  * Arquitectura FreeRTOS de la pulsera. Ver el diagrama y las reglas de
- * propiedad de datos en band_tasks.cpp y en docs/arquitectura-freertos.md.
+ * propiedad de datos en band_tasks.c y en docs/arquitectura-freertos.md.
  */
 #ifndef BAND_TASKS_H
 #define BAND_TASKS_H
@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/** Crea colas, mutex y las cuatro tareas. Llamar una vez desde setup(). */
+/** Crea colas, mutex y las cuatro tareas. Llamar una vez desde app_main(). */
 bool band_tasks_start(void);
 
 /** La radio (callback de ESP-NOW) o el robot simulado entregan aqui lo que

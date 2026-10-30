@@ -1,4 +1,4 @@
-/* Tiempo y log para la prueba en el PC (equivalente a port_arduino.cpp). */
+/* Tiempo y log para la prueba en el PC (equivalente a port_idf.c). */
 #include <stdarg.h>
 #include <stdio.h>
 

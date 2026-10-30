@@ -1,12 +1,19 @@
 /**
  * band_os.h
- * Incluye FreeRTOS igual en la placa (ESP32 Arduino) y en el PC (puerto POSIX
- * usado para probar las tareas sin hardware).
+ * Incluye FreeRTOS igual en la placa (ESP-IDF) y en el PC (puerto POSIX usado
+ * para probar las tareas sin hardware).
  */
 #ifndef BAND_OS_H
 #define BAND_OS_H
 
-#ifdef ARDUINO
+#if defined(ESP_PLATFORM)
+  #include "freertos/FreeRTOS.h"
+  #include "freertos/task.h"
+  #include "freertos/queue.h"
+  #include "freertos/semphr.h"
+  /* En ESP-IDF la profundidad de pila de xTaskCreate se da en bytes. */
+  #define BAND_STACK(bytes)  (bytes)
+#elif defined(ARDUINO)
   #include <Arduino.h>
   #include "freertos/FreeRTOS.h"
   #include "freertos/task.h"
