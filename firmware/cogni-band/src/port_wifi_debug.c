@@ -1,6 +1,6 @@
 #include "band_config.h"
 
-#if !BAND_SIM
+#if !BAND_SIM && BAND_COMM_MODE == BAND_COMM_MODE_WIFI_DEBUG
 
 #include <stdio.h>
 #include <string.h>

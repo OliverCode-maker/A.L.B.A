@@ -86,8 +86,13 @@ void handle(robot_action_t a, uint16_t ref) {
    `robot_fall` repite el CANCELAR 3 veces mas, cada 400 ms; la pulsera ignora los repetidos sin problema.
 3. **La HORA se manda en rafaga** (al aparecer la pulsera, a los 5 s y a los 30 s) y luego cada 6 h. Si la pulsera
    se reinicia, `robot_link` lo detecta solo (su reloj retrocede) y vuelve a mandarla.
-4. **Canal WiFi.** ESP-NOW exige que pulsera y robot usen el mismo canal; si el robot se conecta a un router,
-   queda en el canal del router. Hay que fijarlo o ponerlo igual en la pulsera (pendiente de definir).
+4. **Canal y MAC STA.** La pulsera usa unicast al peer `44:1B:F6:8C:AC:04`
+   en el canal 1 (`firmware/cogni-band/include/band_config.h`). Esa MAC debe ser
+   la interfaz STA del ESP32 del robot; el robot debe transmitir desde STA y estar
+   fijado al canal 1. Si el robot se conecta a un router en otro canal, ESP-NOW
+   dejara de comunicar hasta que ambos vuelvan al mismo canal. La pulsera imprime
+   su MAC STA al arrancar; el robot debe agregar esa MAC como peer para enviar HORA
+   y CANCELAR.
 5. **No usar `robot_link` / `robot_fall` desde dos tareas a la vez**: no son thread-safe.
 6. **Credenciales** (token de ThingsBoard, clave del WiFi): nunca en el repositorio (es publico).
 

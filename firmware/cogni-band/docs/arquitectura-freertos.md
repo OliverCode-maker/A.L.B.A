@@ -101,7 +101,7 @@ la da por desconocida si pasan 48 h.
 | IMU y PPG | Reales por I2C con `BAND_SIM=0`; simulados con `BAND_SIM=1` |
 | Modelo de caidas | TFLite Micro int8; validar inferencia, latencia y falsas alarmas en la placa |
 | Drivers MPU6050 / MAX30102 | Integrados; validar lecturas y calibracion en la placa |
-| ESP-NOW | Pendiente; en modo real `port_send()` devuelve `false` |
+| ESP-NOW | Unicast al peer configurado; canal y MAC en `include/band_config.h` |
 | Medicion de bateria | Pendiente de divisor y ADC; en modo real `port_battery_mv()` devuelve `0` |
 
 La frontera esta en `src/band_port.h`: las tareas solo llaman a `port_*`.
@@ -112,19 +112,25 @@ La frontera esta en `src/band_port.h`: las tareas solo llaman a `port_*`.
 `BAND_SIM=0`; ejecuta `pio run -e lolin-s3-mini -t upload` y
 `pio device monitor -e lolin-s3-mini`. El MPU6050 imprime aceleracion y giroscopio
 cada segundo; el MAX30102 imprime BPM, SpO2 estimada y calidad al completar cada lectura.
-ESP-NOW y la medicion de bateria aun no estan integrados en este modo.
+La medicion de bateria aun no esta integrada.
 
-**Resultados por Wi-Fi, sin cable serial:** al arrancar, la pulsera crea el punto de acceso
+**Resultados por Wi-Fi, sin cable serial (modo `BAND_COMM_MODE_WIFI_DEBUG`):** al arrancar,
+la pulsera crea el punto de acceso
 abierto `ALBA-Fall-Debug` (IP `192.168.4.1`). Conecta la computadora a esa red y ejecuta
 `python tools/receive_fall_results.py`; el programa escucha UDP en el puerto `3333` y muestra
 una linea JSON por ventana con la clase algorítmica, predicción/probabilidad del modelo y pico
-de aceleración. Cuando el detector confirma dos ventanas consecutivas, envía además un evento
-`fall_candidate`; el receptor muestra **CAIDA PROBABLE DETECTADA** y pausa la salida normal
+de aceleración. También envía la telemetría periódica de BPM, SpO2 y batería, y los eventos
+del protocolo en JSON. El modo se selecciona con `BAND_COMM_MODE` en `platformio.ini`:
+`BAND_COMM_MODE_ESPNOW` usa el enlace unicast al robot configurado en
+`include/band_config.h` (`BAND_ESPNOW_PEER_MAC` y `BAND_ESPNOW_CHANNEL`);
+los paquetes ESP-NOW actualmente no están cifrados. `BAND_COMM_MODE_WIFI_DEBUG` permite
+probar sin el robot. Cuando el detector confirma dos ventanas consecutivas, envía además un evento
+`fall_candidate`; el receptor muestra
+**CAIDA PROBABLE DETECTADA** y pausa la salida normal
 durante tres segundos mientras sigue recibiendo datos. El firmware transmite por broadcast a
 `192.168.4.255:3333`; permite UDP entrante en el firewall de la computadora si el sistema lo
-solicita. La consola serial se
-mantiene disponible y el resto de mensajes no se envía por Wi-Fi. Para que quepan el modelo
-y Wi-Fi en la flash de 2 MB, se usa una partición de aplicación única de 1500 KB; no hay
+solicita. La consola serial se mantiene disponible. Para que quepan el modelo y Wi-Fi en
+la flash de 2 MB, se usa una partición de aplicación única de 1500 KB; no hay
 actualización OTA en esta configuración temporal.
 
 **En el PC (sin placa):** `tools/host_sim/run.sh` ejecuta las mismas tareas sobre FreeRTOS real (puerto

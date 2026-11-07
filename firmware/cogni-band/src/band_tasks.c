@@ -142,6 +142,7 @@ static void handle_fall_event(fall_event_t ev, uint32_t t_ms, float probability)
             port_log("[caidas] POSIBLE CAIDA: modelo %.2f, pico %u mg. "
                      "Esperando cancelacion...", (double)probability,
                      (unsigned)alert.valor_pico);
+#if BAND_COMM_MODE == BAND_COMM_MODE_WIFI_DEBUG
             char message[128];
             const int length = snprintf(
                 message, sizeof message,
@@ -154,6 +155,7 @@ static void handle_fall_event(fall_event_t ev, uint32_t t_ms, float probability)
                 port_log("[wifi-debug] no se pudo transmitir la alerta "
                          "de posible caida");
             }
+#endif
             break;
         }
         case FALL_EVT_CONFIRMED:
@@ -353,6 +355,7 @@ static void compare_rule_model_window(const fall_model_result_t *result)
         g_rule_model_comparison[rule_fall][model_fall]++;
     }
 
+#if BAND_COMM_MODE == BAND_COMM_MODE_WIFI_DEBUG
     char message[160];
     const int length = snprintf(
         message, sizeof message,
@@ -372,6 +375,7 @@ static void compare_rule_model_window(const fall_model_result_t *result)
                      (unsigned long)dropped_debug_results);
         }
     }
+#endif
 }
 
 /* ======================================================================== */
