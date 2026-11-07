@@ -33,6 +33,7 @@
 #include "band_tasks.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "alba_codec.h"
@@ -45,6 +46,7 @@
 #include "band_port.h"
 #include "fall_detector.h"
 #include "fall_model.h"
+#include "port_wifi_debug.h"
 #include "../models/fall_detector/fall_model_preprocess.h"
 #include "wake_detector.h"
 
@@ -135,12 +137,25 @@ static void handle_fall_event(fall_event_t ev, uint32_t t_ms, float probability)
     band_alert_t alert;
     if (band_alert_from_fall(ev, f, &alert)) {
         switch (ev) {
-        case FALL_EVT_CANDIDATE:
+        case FALL_EVT_CANDIDATE: {
             STAT_INC(falls_candidate);
             port_log("[caidas] POSIBLE CAIDA: modelo %.2f, pico %u mg. "
                      "Esperando cancelacion...", (double)probability,
                      (unsigned)alert.valor_pico);
+            char message[128];
+            const int length = snprintf(
+                message, sizeof message,
+                "{\"type\":\"fall_candidate\",\"t_ms\":%lu,"
+                "\"probability\":%.3f,\"peak_g\":%.3f}",
+                (unsigned long)t_ms, (double)probability,
+                (double)alert.valor_pico / 1000.0);
+            if (length < 0 || (size_t)length >= sizeof message ||
+                !port_wifi_debug_send(message)) {
+                port_log("[wifi-debug] no se pudo transmitir la alerta "
+                         "de posible caida");
+            }
             break;
+        }
         case FALL_EVT_CONFIRMED:
             STAT_INC(falls_confirmed);
             port_log("[caidas] CAIDA CONFIRMADA (nadie cancelo)");
@@ -337,6 +352,26 @@ static void compare_rule_model_window(const fall_model_result_t *result)
             result->rule_class == FALL_RULE_CLASS_FALL ? 1u : 0u;
         g_rule_model_comparison[rule_fall][model_fall]++;
     }
+
+    char message[160];
+    const int length = snprintf(
+        message, sizeof message,
+        "{\"type\":\"classification\",\"t_ms\":%lu,\"rules\":\"%s\","
+        "\"model\":\"%s\",\"probability\":%.3f,\"peak_g\":%.3f}",
+        (unsigned long)result->window_t_ms,
+        rule_class_name(result->rule_class),
+        model_fall ? "caida" : "no-caida",
+        (double)result->probability, (double)result->peak_g);
+    if (length < 0 || (size_t)length >= sizeof message ||
+        !port_wifi_debug_send(message)) {
+        static uint32_t dropped_debug_results;
+        dropped_debug_results++;
+        if (dropped_debug_results == 1u ||
+            dropped_debug_results % 100u == 0u) {
+            port_log("[wifi-debug] resultado UDP descartado (%lu)",
+                     (unsigned long)dropped_debug_results);
+        }
+    }
 }
 
 /* ======================================================================== */
@@ -411,13 +446,13 @@ static void task_fall(void *)
                          (unsigned)g_rule_model_comparison[0][0],
                          (double)agreement, (unsigned)compared_windows);
             }
-            if (model_result.probability >= FALL_MODEL_THRESHOLD) {
-                const fall_event_t model_event =
-                    fall_detector_model_candidate(&g_fall, s.t_ms,
-                                                  model_result.peak_g);
-                handle_fall_event(model_event, s.t_ms,
-                                  model_result.probability);
-            }
+            const fall_event_t model_event = fall_detector_model_observe(
+                &g_fall, model_result.window_t_ms,
+                model_result.probability >= FALL_MODEL_THRESHOLD,
+                model_result.rule_class == FALL_RULE_CLASS_FALL,
+                model_result.peak_g);
+            handle_fall_event(model_event, model_result.window_t_ms,
+                              model_result.probability);
         }
 
         /* 3) Cada segundo, la actigrafia para tVitals. */

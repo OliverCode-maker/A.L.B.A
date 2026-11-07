@@ -114,6 +114,19 @@ La frontera esta en `src/band_port.h`: las tareas solo llaman a `port_*`.
 cada segundo; el MAX30102 imprime BPM, SpO2 estimada y calidad al completar cada lectura.
 ESP-NOW y la medicion de bateria aun no estan integrados en este modo.
 
+**Resultados por Wi-Fi, sin cable serial:** al arrancar, la pulsera crea el punto de acceso
+abierto `ALBA-Fall-Debug` (IP `192.168.4.1`). Conecta la computadora a esa red y ejecuta
+`python tools/receive_fall_results.py`; el programa escucha UDP en el puerto `3333` y muestra
+una linea JSON por ventana con la clase algorítmica, predicción/probabilidad del modelo y pico
+de aceleración. Cuando el detector confirma dos ventanas consecutivas, envía además un evento
+`fall_candidate`; el receptor muestra **CAIDA PROBABLE DETECTADA** y pausa la salida normal
+durante tres segundos mientras sigue recibiendo datos. El firmware transmite por broadcast a
+`192.168.4.255:3333`; permite UDP entrante en el firewall de la computadora si el sistema lo
+solicita. La consola serial se
+mantiene disponible y el resto de mensajes no se envía por Wi-Fi. Para que quepan el modelo
+y Wi-Fi en la flash de 2 MB, se usa una partición de aplicación única de 1500 KB; no hay
+actualización OTA en esta configuración temporal.
+
 **En el PC (sin placa):** `tools/host_sim/run.sh` ejecuta las mismas tareas sobre FreeRTOS real (puerto
 POSIX; la primera vez descarga el kernel de GitHub). `tools/host_sim/check.sh` lo corre y comprueba que
 paso todo lo esperado. `FAST=0 tools/host_sim/run.sh 1500` usa tiempos reales.
@@ -149,7 +162,10 @@ por la misma ventana e informa la distribucion de clases de reglas y TP/FN/FP/TN
 las ventanas clasificadas `no-caida` o `caida`. Las ventanas `pre-impacto` se excluyen
 de esa matriz porque el modelo binario no tiene esa clase. Es concordancia entre
 predictores, no exactitud contra verdad-terreno. Solo el modelo TensorFlow genera
-alertas; la clasificacion algoritmica es comparativa y experimental.
+la puntuacion de la alerta, pero el firmware ahora solo abre una ventana de cancelacion
+cuando el modelo y las reglas clasifican `caida` en dos ventanas consecutivas (maximo
+500 ms entre ellas). Esta concordancia puede reducir falsos positivos al levantar el brazo,
+pero tambien puede omitir caidas que las reglas no reconozcan; requiere validacion en la muneca.
 
 `tools/train_fall_model.py` ya no entrena TensorFlow para Three Classes: evalua un
 clasificador algorítmico por magnitud sobre su split de prueba. Ejemplo:

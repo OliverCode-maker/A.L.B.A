@@ -6,6 +6,7 @@ idf_component_register(
         "../models/fall_detector/fall_detector_model_data.c"
         "port_idf.c"
         "port_sim.c"
+        "port_wifi_debug.c"
         "port_battery.c"
         "port_espnow.c"
         "port_i2c.c"
@@ -29,8 +30,13 @@ idf_component_register(
         "../../common"
     REQUIRES
         esp-tflite-micro
+        esp_event
+        esp_netif
+        esp_wifi
         esp_driver_i2c
         esp_timer
         freertos
         log
+        lwip
+        nvs_flash
 )

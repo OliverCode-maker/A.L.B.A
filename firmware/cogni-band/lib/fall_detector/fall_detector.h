@@ -48,6 +48,8 @@ extern "C" {
 
 /* Muestras de historial. A 100 Hz son 3.2 s (8 bytes por muestra = 2.5 kB). */
 #define FALL_RING_LEN 320
+#define FALL_MODEL_POSITIVE_WINDOWS_REQUIRED 2u
+#define FALL_MODEL_MAX_POSITIVE_INTERVAL_MS   500u
 
 /** Una muestra del IMU ya convertida a unidades fisicas. */
 typedef struct {
@@ -126,6 +128,9 @@ typedef struct {
     uint32_t t_ff_start, t_ff_end, t_impact, t_confirm, refractory_until;
     bool     refractory_active;
     bool     cancel_req;
+    uint8_t  model_positive_windows;
+    uint32_t model_last_positive_ms;
+    float    model_peak_g;
 
     float    grav_pre[3];           /* gravedad estimada antes del evento */
     bool     pre_valid;
@@ -157,9 +162,10 @@ void fall_detector_init(fall_detector_t *fd, const fall_config_t *cfg);
  *  se calculan con la magnitud de aceleracion sin filtrar. */
 fall_event_t fall_detector_process(fall_detector_t *fd, const fall_sample_t *sample);
 
-/** Inicia la ventana de confirmacion cuando un modelo externo detecta una caida. */
-fall_event_t fall_detector_model_candidate(fall_detector_t *fd, uint32_t now_ms,
-                                           float peak_g);
+/** Requiere dos ventanas consecutivas positivas en ambos detectores. */
+fall_event_t fall_detector_model_observe(fall_detector_t *fd, uint32_t now_ms,
+                                         bool model_positive,
+                                         bool rule_confirmed, float peak_g);
 
 /** El usuario (o el cuidador) pulso "cancelar". Solo tiene efecto en estado CONFIRM;
  *  el evento FALL_EVT_CANCELLED se devuelve en la siguiente llamada a process(). */

@@ -22,6 +22,10 @@
 #define BAND_SIM_FAST1   0
 #endif
 
+/* Salida temporal de resultados por el AP del ESP32-S3 (UDP broadcast). */
+#define BAND_WIFI_DEBUG_SSID      "ALBA-Fall-Debug"
+#define BAND_WIFI_DEBUG_UDP_PORT  3333u
+
 /* ---- Periodos ---------------------------------------------------------------*/
 #define BAND_IMU_PERIOD_MS        10u      /* 100 Hz                                  */
 #define BAND_ACTIVITY_PERIOD_MS   1000u    /* cada cuanto se pasa la actigrafia a vitales */

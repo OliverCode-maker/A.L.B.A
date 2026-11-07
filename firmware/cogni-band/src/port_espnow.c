@@ -5,6 +5,7 @@
 #include "band_port.h"
 #include "band_pins.h"
 #include "port_i2c.h"
+#include "port_wifi_debug.h"
 
 #include "esp_err.h"
 
@@ -17,6 +18,7 @@ void port_start(void)
     } else {
         port_log("[i2c] no se pudo iniciar el bus: %s", esp_err_to_name(err));
     }
+    port_wifi_debug_start();
     port_log("[radio] ESP-NOW pendiente; port_send no enviara paquetes");
     port_log("[bateria] medicion pendiente; port_battery_mv devolvera 0");
 }

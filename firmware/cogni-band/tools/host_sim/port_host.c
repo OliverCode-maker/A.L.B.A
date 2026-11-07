@@ -24,3 +24,9 @@ void port_log(const char *fmt, ...)
     printf("[%4lu.%03lu] %s\n", (unsigned long)(ms / 1000u), (unsigned long)(ms % 1000u), line);
     fflush(stdout);
 }
+
+bool port_wifi_debug_send(const char *message)
+{
+    (void)message;
+    return true;
+}
