@@ -8,6 +8,9 @@
 #include <string.h>
 
 #define RAD2DEG 57.29578f
+#define TWO_PI 6.28318530718f
+#define DEFAULT_LOWPASS_HZ 5.0f
+#define MAX_FILTER_GAP_MS 200u
 
 /* ======================================================================== */
 /*  Utilidades                                                              */
@@ -38,6 +41,41 @@ static void ring_push(fall_detector_t *fd, const fall_sample_t *s, float svm)
     it->svm = to_mg(svm);
     fd->head = (uint16_t)((fd->head + 1u) % FALL_RING_LEN);
     if (fd->count < FALL_RING_LEN) fd->count++;
+}
+
+static void lowpass_sample(fall_detector_t *fd, const fall_sample_t *sample,
+                           fall_sample_t *filtered)
+{
+    const float input[6] = {
+        sample->ax, sample->ay, sample->az,
+        sample->gx, sample->gy, sample->gz
+    };
+    float *state[6] = {
+        &fd->filtered_ax, &fd->filtered_ay, &fd->filtered_az,
+        &fd->filtered_gx, &fd->filtered_gy, &fd->filtered_gz
+    };
+    const uint32_t dt_ms = sample->t_ms - fd->filter_t_ms;
+
+    if (!fd->filter_initialized || dt_ms == 0u || dt_ms > MAX_FILTER_GAP_MS) {
+        for (size_t i = 0; i < 6; i++) *state[i] = input[i];
+        fd->filter_initialized = true;
+    } else {
+        const float dt_s = (float)dt_ms / 1000.0f;
+        const float rc = 1.0f / (TWO_PI * fd->cfg.lowpass_hz);
+        const float alpha = dt_s / (rc + dt_s);
+        for (size_t i = 0; i < 6; i++) {
+            *state[i] += alpha * (input[i] - *state[i]);
+        }
+    }
+
+    fd->filter_t_ms = sample->t_ms;
+    filtered->t_ms = sample->t_ms;
+    filtered->ax = fd->filtered_ax;
+    filtered->ay = fd->filtered_ay;
+    filtered->az = fd->filtered_az;
+    filtered->gx = fd->filtered_gx;
+    filtered->gy = fd->filtered_gy;
+    filtered->gz = fd->filtered_gz;
 }
 
 /* age = 0 es la muestra mas reciente, age = 1 la anterior, etc. */
@@ -166,7 +204,9 @@ void fall_config_default(fall_config_t *c)
     c->refractory_ms      = 10000;
     c->score_th           = 0.70f;
     c->activity_th_g      = 0.05f;
+    c->lowpass_hz         = DEFAULT_LOWPASS_HZ;
     c->classifier         = NULL;
+    c->model_only         = false;
 }
 
 void fall_detector_init(fall_detector_t *fd, const fall_config_t *cfg)
@@ -174,6 +214,10 @@ void fall_detector_init(fall_detector_t *fd, const fall_config_t *cfg)
     memset(fd, 0, sizeof *fd);
     if (cfg) fd->cfg = *cfg; else fall_config_default(&fd->cfg);
     if (fd->cfg.sample_hz == 0u)  fd->cfg.sample_hz = 100;
+    if (fd->cfg.lowpass_hz <= 0.0f) fd->cfg.lowpass_hz = DEFAULT_LOWPASS_HZ;
+    if (fd->cfg.lowpass_hz >= (float)fd->cfg.sample_hz * 0.5f) {
+        fd->cfg.lowpass_hz = (float)fd->cfg.sample_hz * 0.45f;
+    }
     if (!fd->cfg.classifier)      fd->cfg.classifier = fall_classify_heuristic;
     fd->state = FALL_ST_IDLE;
 }
@@ -181,6 +225,57 @@ void fall_detector_init(fall_detector_t *fd, const fall_config_t *cfg)
 void fall_detector_cancel(fall_detector_t *fd)
 {
     if (fd->state == FALL_ST_CONFIRM) fd->cancel_req = true;
+}
+
+fall_event_t fall_detector_model_observe(fall_detector_t *fd, uint32_t now_ms,
+                                         bool model_positive,
+                                         bool rule_confirmed, float peak_g)
+{
+    if (!fd->cfg.model_only) return FALL_EVT_NONE;
+    if (fd->state != FALL_ST_IDLE) {
+        fd->model_positive_windows = 0u;
+        fd->model_peak_g = 0.0f;
+        return FALL_EVT_NONE;
+    }
+    if (fd->refractory_active) {
+        if ((int32_t)(now_ms - fd->refractory_until) < 0) {
+            fd->model_positive_windows = 0u;
+            fd->model_peak_g = 0.0f;
+            return FALL_EVT_NONE;
+        }
+        fd->refractory_active = false;
+    }
+
+    if (!model_positive || !rule_confirmed) {
+        fd->model_positive_windows = 0u;
+        fd->model_peak_g = 0.0f;
+        return FALL_EVT_NONE;
+    }
+
+    if (fd->model_positive_windows > 0u &&
+        (uint32_t)(now_ms - fd->model_last_positive_ms) >
+            FALL_MODEL_MAX_POSITIVE_INTERVAL_MS) {
+        fd->model_positive_windows = 0u;
+        fd->model_peak_g = 0.0f;
+    }
+    fd->model_last_positive_ms = now_ms;
+    if (peak_g > fd->model_peak_g) fd->model_peak_g = peak_g;
+    if (fd->model_positive_windows < FALL_MODEL_POSITIVE_WINDOWS_REQUIRED) {
+        fd->model_positive_windows++;
+    }
+    if (fd->model_positive_windows < FALL_MODEL_POSITIVE_WINDOWS_REQUIRED) {
+        return FALL_EVT_NONE;
+    }
+
+    memset(&fd->feat, 0, sizeof fd->feat);
+    fd->feat.svm_max = fd->model_peak_g;
+    fd->model_positive_windows = 0u;
+    fd->model_peak_g = 0.0f;
+    fd->state = FALL_ST_CONFIRM;
+    fd->t_confirm = now_ms;
+    fd->cancel_req = false;
+    fd->n_candidates++;
+    return FALL_EVT_CANDIDATE;
 }
 
 uint8_t fall_detector_take_activity_pct(fall_detector_t *fd)
@@ -237,10 +332,20 @@ fall_event_t fall_detector_process(fall_detector_t *fd, const fall_sample_t *s)
     const fall_config_t *c = &fd->cfg;
     fall_features_t *f = &fd->feat;
 
-    const float svm  = sqrtf(s->ax * s->ax + s->ay * s->ay + s->az * s->az);
-    const float gyro = sqrtf(s->gx * s->gx + s->gy * s->gy + s->gz * s->gz);
+    const float raw_svm =
+        sqrtf(s->ax * s->ax + s->ay * s->ay + s->az * s->az);
+    fall_sample_t filtered_sample;
+    lowpass_sample(fd, s, &filtered_sample);
+    const float svm =
+        sqrtf(filtered_sample.ax * filtered_sample.ax +
+              filtered_sample.ay * filtered_sample.ay +
+              filtered_sample.az * filtered_sample.az);
+    const float gyro =
+        sqrtf(filtered_sample.gx * filtered_sample.gx +
+              filtered_sample.gy * filtered_sample.gy +
+              filtered_sample.gz * filtered_sample.gz);
 
-    /* Derivada de SVM con el intervalo real entre muestras (g/s). */
+    /* Derivada de SVM filtrada; los umbrales de impacto usan la SVM cruda. */
     float jerk = 0.0f;
     if (fd->have_last) {
         const uint32_t dt = s->t_ms - fd->last_t_ms;
@@ -254,7 +359,30 @@ fall_event_t fall_detector_process(fall_detector_t *fd, const fall_sample_t *s)
     fd->act_total++;
     if (fabsf(svm - 1.0f) > c->activity_th_g) fd->act_samples++;
 
-    ring_push(fd, s, svm);
+    ring_push(fd, &filtered_sample, svm);
+
+    if (c->model_only) {
+        if (fd->state == FALL_ST_IDLE && fd->refractory_active) {
+            if ((int32_t)(s->t_ms - fd->refractory_until) < 0) return FALL_EVT_NONE;
+            fd->refractory_active = false;
+        }
+        if (fd->state == FALL_ST_CONFIRM) {
+            if (fd->cancel_req) {
+                fd->cancel_req = false;
+                fd->state = FALL_ST_IDLE;
+                start_refractory(fd, s->t_ms);
+                fd->n_cancelled++;
+                return FALL_EVT_CANCELLED;
+            }
+            if ((s->t_ms - fd->t_confirm) >= c->confirm_wait_ms) {
+                fd->state = FALL_ST_IDLE;
+                start_refractory(fd, s->t_ms);
+                fd->n_confirmed++;
+                return FALL_EVT_CONFIRMED;
+            }
+        }
+        return FALL_EVT_NONE;
+    }
 
     switch (fd->state)
     {
@@ -267,15 +395,15 @@ fall_event_t fall_detector_process(fall_detector_t *fd, const fall_sample_t *s)
         }
         if (svm < c->freefall_th_g) {
             memset(f, 0, sizeof *f);
-            f->svm_min    = svm;
+            f->svm_min    = raw_svm;
             fd->t_ff_start = s->t_ms;
             capture_pre(fd, 100u);
             fd->state = FALL_ST_FREEFALL;
-        } else if (svm > c->impact_direct_th_g) {
+        } else if (raw_svm > c->impact_direct_th_g) {
             /* Impacto fuerte sin caida libre (p. ej. caer desde sentada). */
             memset(f, 0, sizeof *f);
             f->svm_min   = 1.0f;
-            f->svm_max   = svm;
+            f->svm_max   = raw_svm;
             f->jerk_max  = jerk;
             f->gyro_peak = gyro;
             capture_pre(fd, 500u);
@@ -285,10 +413,10 @@ fall_event_t fall_detector_process(fall_detector_t *fd, const fall_sample_t *s)
         break;
 
     case FALL_ST_FREEFALL:
-        if (svm  < f->svm_min)    f->svm_min   = svm;
-        if (svm  > f->svm_max)    f->svm_max   = svm;
+        if (raw_svm  < f->svm_min)    f->svm_min   = raw_svm;
+        if (raw_svm  > f->svm_max)    f->svm_max   = raw_svm;
         if (gyro > f->gyro_peak)  f->gyro_peak = gyro;
-        if (svm >= c->freefall_th_g) {
+        if (raw_svm >= c->freefall_th_g) {
             const uint32_t dur = s->t_ms - fd->t_ff_start;
             if (dur >= c->freefall_min_ms && dur <= c->freefall_max_ms) {
                 f->ff_duration_ms = (float)dur;
@@ -304,7 +432,7 @@ fall_event_t fall_detector_process(fall_detector_t *fd, const fall_sample_t *s)
         break;
 
     case FALL_ST_IMPACT_WAIT:
-        if (svm  > f->svm_max)    f->svm_max   = svm;
+        if (raw_svm  > f->svm_max)    f->svm_max   = raw_svm;
         if (jerk > f->jerk_max)   f->jerk_max  = jerk;
         if (gyro > f->gyro_peak)  f->gyro_peak = gyro;
         if (f->svm_max > c->impact_th_g) {
@@ -319,7 +447,7 @@ fall_event_t fall_detector_process(fall_detector_t *fd, const fall_sample_t *s)
     case FALL_ST_POST: {
         const uint32_t since = s->t_ms - fd->t_impact;
         if (since <= c->peak_window_ms) {          /* el pico del impacto, no el movimiento posterior */
-            if (svm  > f->svm_max)   f->svm_max   = svm;
+            if (raw_svm  > f->svm_max)   f->svm_max   = raw_svm;
             if (jerk > f->jerk_max)  f->jerk_max  = jerk;
             if (gyro > f->gyro_peak) f->gyro_peak = gyro;
         }

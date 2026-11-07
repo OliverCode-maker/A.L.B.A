@@ -32,6 +32,8 @@
  */
 #include "band_tasks.h"
 
+#include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "alba_codec.h"
@@ -43,6 +45,9 @@
 #include "band_os.h"
 #include "band_port.h"
 #include "fall_detector.h"
+#include "fall_model.h"
+#include "port_wifi_debug.h"
+#include "../models/fall_detector/fall_model_preprocess.h"
 #include "wake_detector.h"
 
 /* ======================================================================== */
@@ -65,9 +70,11 @@ static latest_t g_latest;
 static SemaphoreHandle_t g_latest_mtx;
 
 static band_stats_t g_stats;
+static int g_model_init_status;
 
-static QueueHandle_t q_tx, q_rx, q_cmd;
-static TaskHandle_t  h_fall, h_vitals, h_comm, h_system;   /* solo para medir la pila */
+static QueueHandle_t q_tx, q_rx, q_cmd, q_model_window, q_model_result;
+static TaskHandle_t  h_fall, h_vitals, h_comm, h_model, h_system;
+static fall_model_window_t g_model_window;
 
 enum { TX_ALERT = 1, TX_TELEMETRY = 2 };
 enum { CMD_CANCEL_FALL = 1 };
@@ -80,6 +87,14 @@ typedef struct {
 } tx_item_t;
 
 typedef struct { uint8_t len; uint8_t buf[BAND_RX_MAX_LEN]; } rx_item_t;
+typedef struct {
+    float probability, peak_g;
+    uint32_t window_t_ms;
+    fall_rule_class_t rule_class;
+} fall_model_result_t;
+
+static uint32_t g_rule_model_comparison[2][2];
+static uint32_t g_rule_class_counts[FALL_RULE_CLASS_COUNT];
 
 #define STAT_INC(field)  __atomic_fetch_add(&g_stats.field, 1u, __ATOMIC_RELAXED)
 
@@ -114,15 +129,270 @@ static uint8_t hour_now(uint32_t now_ms)
     return h;
 }
 
+static void handle_fall_event(fall_event_t ev, uint32_t t_ms, float probability)
+{
+    if (ev == FALL_EVT_NONE) return;
+
+    const fall_features_t *f = fall_detector_features(&g_fall);
+    band_alert_t alert;
+    if (band_alert_from_fall(ev, f, &alert)) {
+        switch (ev) {
+        case FALL_EVT_CANDIDATE: {
+            STAT_INC(falls_candidate);
+            port_log("[caidas] POSIBLE CAIDA: modelo %.2f, pico %u mg. "
+                     "Esperando cancelacion...", (double)probability,
+                     (unsigned)alert.valor_pico);
+#if BAND_COMM_MODE == BAND_COMM_MODE_WIFI_DEBUG
+            char message[128];
+            const int length = snprintf(
+                message, sizeof message,
+                "{\"type\":\"fall_candidate\",\"t_ms\":%lu,"
+                "\"probability\":%.3f,\"peak_g\":%.3f}",
+                (unsigned long)t_ms, (double)probability,
+                (double)alert.valor_pico / 1000.0);
+            if (length < 0 || (size_t)length >= sizeof message ||
+                !port_wifi_debug_send(message)) {
+                port_log("[wifi-debug] no se pudo transmitir la alerta "
+                         "de posible caida");
+            }
+#endif
+            break;
+        }
+        case FALL_EVT_CONFIRMED:
+            STAT_INC(falls_confirmed);
+            port_log("[caidas] CAIDA CONFIRMADA (nadie cancelo)");
+            break;
+        case FALL_EVT_CANCELLED:
+            STAT_INC(falls_cancelled);
+            port_log("[caidas] caida CANCELADA");
+            break;
+        default:
+            break;
+        }
+        send_alert(&alert, t_ms);
+    }
+}
+
+static float window_accel_magnitude(const fall_model_window_t *window,
+                                    uint16_t sample_index)
+{
+    const float *sample =
+        &window->values[(size_t)sample_index * FALL_MODEL_CHANNELS];
+    return sqrtf(sample[0] * sample[0] + sample[1] * sample[1] +
+                 sample[2] * sample[2]);
+}
+
+static float window_gyro_magnitude(const fall_model_window_t *window,
+                                   uint16_t sample_index)
+{
+    const float *sample =
+        &window->values[(size_t)sample_index * FALL_MODEL_CHANNELS + 3u];
+    return sqrtf(sample[0] * sample[0] + sample[1] * sample[1] +
+                 sample[2] * sample[2]);
+}
+
+static float window_orientation_change(const fall_model_window_t *window,
+                                      uint16_t event_index)
+{
+    const uint16_t radius =
+        (uint16_t)(BAND_RULE_CONFIRM_WINDOW_MS / BAND_IMU_PERIOD_MS / 2u);
+    if (event_index < radius ||
+        event_index + radius > FALL_MODEL_WINDOW_SAMPLES) {
+        return 0.0f;
+    }
+
+    float before[3] = {0.0f, 0.0f, 0.0f};
+    float after[3] = {0.0f, 0.0f, 0.0f};
+    for (uint16_t offset = 0; offset < radius; offset++) {
+        const float *pre =
+            &window->values[(size_t)(event_index - radius + offset) *
+                            FALL_MODEL_CHANNELS];
+        const float *post =
+            &window->values[(size_t)(event_index + offset) *
+                            FALL_MODEL_CHANNELS];
+        for (uint8_t axis = 0; axis < 3u; axis++) {
+            before[axis] += pre[axis];
+            after[axis] += post[axis];
+        }
+    }
+
+    const float before_norm =
+        sqrtf(before[0] * before[0] + before[1] * before[1] +
+              before[2] * before[2]);
+    const float after_norm =
+        sqrtf(after[0] * after[0] + after[1] * after[1] +
+              after[2] * after[2]);
+    if (before_norm < 1e-6f || after_norm < 1e-6f) return 0.0f;
+
+    float cosine = (before[0] * after[0] + before[1] * after[1] +
+                    before[2] * after[2]) /
+                   (before_norm * after_norm);
+    if (cosine > 1.0f) cosine = 1.0f;
+    if (cosine < -1.0f) cosine = -1.0f;
+    return acosf(cosine) * 57.29578f;
+}
+
+static bool window_post_impact_confirmed(const fall_model_window_t *window,
+                                        uint16_t event_index)
+{
+    const uint16_t post_samples =
+        (uint16_t)(BAND_RULE_CONFIRM_WINDOW_MS / BAND_IMU_PERIOD_MS);
+    const uint16_t end = (uint16_t)(
+        event_index + post_samples < FALL_MODEL_WINDOW_SAMPLES
+            ? event_index + post_samples
+            : FALL_MODEL_WINDOW_SAMPLES);
+    float gyro_peak = 0.0f;
+    float magnitude_sum = 0.0f;
+    float magnitude_sq_sum = 0.0f;
+    uint16_t count = 0;
+    for (uint16_t i = event_index; i < end; i++) {
+        const float gyro = window_gyro_magnitude(window, i);
+        if (gyro > gyro_peak) gyro_peak = gyro;
+        const float magnitude = window_accel_magnitude(window, i);
+        magnitude_sum += magnitude;
+        magnitude_sq_sum += magnitude * magnitude;
+        count++;
+    }
+
+    if (gyro_peak >= BAND_RULE_CONFIRM_GYRO_DPS ||
+        window_orientation_change(window, event_index) >=
+            BAND_RULE_CONFIRM_ANGLE_DEG) {
+        return true;
+    }
+    if (count < 2u) return false;
+    const float mean = magnitude_sum / (float)count;
+    const float variance = magnitude_sq_sum / (float)count - mean * mean;
+    return variance >= 0.0f &&
+           sqrtf(variance) < BAND_RULE_CONFIRM_POST_STD_G;
+}
+
+static fall_rule_class_t classify_rule_window(const fall_model_window_t *window)
+{
+    const uint16_t min_freefall_samples =
+        (uint16_t)(BAND_RULE_FREEFALL_MIN_MS / BAND_IMU_PERIOD_MS);
+    const uint16_t max_freefall_samples =
+        (uint16_t)(BAND_RULE_FREEFALL_MAX_MS / BAND_IMU_PERIOD_MS);
+    const uint16_t impact_samples =
+        (uint16_t)(BAND_RULE_IMPACT_WINDOW_MS / BAND_IMU_PERIOD_MS);
+    int32_t freefall_start = -1;
+
+    for (uint16_t i = 0; i < FALL_MODEL_WINDOW_SAMPLES; i++) {
+        const float acceleration = window_accel_magnitude(window, i);
+
+        if (acceleration < BAND_RULE_FREEFALL_G) {
+            if (freefall_start < 0) freefall_start = (int32_t)i;
+            continue;
+        }
+
+        if (freefall_start >= 0) {
+            const uint16_t duration =
+                (uint16_t)(i - (uint16_t)freefall_start);
+            if (duration >= min_freefall_samples &&
+                duration <= max_freefall_samples) {
+                const uint16_t impact_end = (uint16_t)(
+                    i + impact_samples < FALL_MODEL_WINDOW_SAMPLES
+                        ? i + impact_samples
+                        : FALL_MODEL_WINDOW_SAMPLES);
+                for (uint16_t j = i; j < impact_end; j++) {
+                    if (window_accel_magnitude(window, j) >
+                        BAND_RULE_IMPACT_G) {
+                        return window_post_impact_confirmed(window, j)
+                                   ? FALL_RULE_CLASS_FALL
+                                   : FALL_RULE_CLASS_PRE_IMPACT;
+                    }
+                }
+                return FALL_RULE_CLASS_PRE_IMPACT;
+            }
+            freefall_start = -1;
+        }
+
+        if (acceleration > BAND_RULE_DIRECT_IMPACT_G) {
+            return window_post_impact_confirmed(window, i)
+                       ? FALL_RULE_CLASS_FALL
+                       : FALL_RULE_CLASS_PRE_IMPACT;
+        }
+        if (acceleration > BAND_RULE_IMPACT_G) {
+            return FALL_RULE_CLASS_PRE_IMPACT;
+        }
+    }
+
+    if (freefall_start >= 0) {
+        const uint16_t duration =
+            (uint16_t)(FALL_MODEL_WINDOW_SAMPLES - (uint16_t)freefall_start);
+        if (duration >= min_freefall_samples &&
+            duration <= max_freefall_samples) {
+            return FALL_RULE_CLASS_PRE_IMPACT;
+        }
+    }
+    return FALL_RULE_CLASS_NON_FALL;
+}
+
+static const char *rule_class_name(fall_rule_class_t rule_class)
+{
+    switch (rule_class) {
+    case FALL_RULE_CLASS_NON_FALL: return "no-caida";
+    case FALL_RULE_CLASS_PRE_IMPACT: return "pre-impacto";
+    case FALL_RULE_CLASS_FALL: return "caida";
+    default: return "invalida";
+    }
+}
+
+static void compare_rule_model_window(const fall_model_result_t *result)
+{
+    if (result->rule_class >= FALL_RULE_CLASS_COUNT) {
+        port_log("[comparacion] clase de reglas invalida: %u",
+                 (unsigned)result->rule_class);
+        return;
+    }
+
+    const uint8_t model_fall =
+        result->probability >= FALL_MODEL_THRESHOLD ? 1u : 0u;
+    g_rule_class_counts[result->rule_class]++;
+
+    if (result->rule_class != FALL_RULE_CLASS_PRE_IMPACT) {
+        const uint8_t rule_fall =
+            result->rule_class == FALL_RULE_CLASS_FALL ? 1u : 0u;
+        g_rule_model_comparison[rule_fall][model_fall]++;
+    }
+
+#if BAND_COMM_MODE == BAND_COMM_MODE_WIFI_DEBUG
+    char message[160];
+    const int length = snprintf(
+        message, sizeof message,
+        "{\"type\":\"classification\",\"t_ms\":%lu,\"rules\":\"%s\","
+        "\"model\":\"%s\",\"probability\":%.3f,\"peak_g\":%.3f}",
+        (unsigned long)result->window_t_ms,
+        rule_class_name(result->rule_class),
+        model_fall ? "caida" : "no-caida",
+        (double)result->probability, (double)result->peak_g);
+    if (length < 0 || (size_t)length >= sizeof message ||
+        !port_wifi_debug_send(message)) {
+        static uint32_t dropped_debug_results;
+        dropped_debug_results++;
+        if (dropped_debug_results == 1u ||
+            dropped_debug_results % 100u == 0u) {
+            port_log("[wifi-debug] resultado UDP descartado (%lu)",
+                     (unsigned long)dropped_debug_results);
+        }
+    }
+#endif
+}
+
 /* ======================================================================== */
-/*  tFall: IMU a 100 Hz -> detector de caidas                               */
+/*  tFall: IMU a 100 Hz -> reglas y modelo en paralelo                      */
 /* ======================================================================== */
 static void task_fall(void *)
 {
-    fall_detector_init(&g_fall, NULL);
+    fall_config_t fall_cfg;
+    fall_config_default(&fall_cfg);
+    fall_cfg.model_only = true;
+    fall_detector_init(&g_fall, &fall_cfg);
+    memset(g_rule_model_comparison, 0, sizeof g_rule_model_comparison);
+    memset(g_rule_class_counts, 0, sizeof g_rule_class_counts);
 
     TickType_t last_wake = xTaskGetTickCount();
     uint32_t   t_act_ms  = port_millis();
+    uint32_t   t_model_log_ms = 0;
 
     for (;;) {
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(BAND_IMU_PERIOD_MS));
@@ -137,32 +407,56 @@ static void task_fall(void *)
         fall_sample_t s;
         if (!port_imu_read(port_millis(), &s)) { STAT_INC(imu_errors); continue; }
 
-        const fall_event_t ev = fall_detector_process(&g_fall, &s);
-        if (ev != FALL_EVT_NONE) {
-            const fall_features_t *f = fall_detector_features(&g_fall);
-            band_alert_t a;
-            if (band_alert_from_fall(ev, f, &a)) {
-                switch (ev) {
-                case FALL_EVT_CANDIDATE:
-                    STAT_INC(falls_candidate);
-                    port_log("[caidas] POSIBLE CAIDA: pico %u mg, cambio de postura %.0f grados. "
-                             "Esperando cancelacion...", (unsigned)a.valor_pico, (double)f->delta_angle);
-                    break;
-                case FALL_EVT_CONFIRMED:
-                    STAT_INC(falls_confirmed);
-                    port_log("[caidas] CAIDA CONFIRMADA (nadie cancelo)");
-                    break;
-                case FALL_EVT_CANCELLED:
-                    STAT_INC(falls_cancelled);
-                    port_log("[caidas] caida CANCELADA");
-                    break;
-                default: break;
-                }
-                send_alert(&a, s.t_ms);
-            } else if (ev == FALL_EVT_REJECTED) {
-                STAT_INC(falls_rejected);
-                port_log("[caidas] golpe descartado (sin cambio de postura)");
+        handle_fall_event(fall_detector_process(&g_fall, &s), s.t_ms, 0.0f);
+
+        if (fall_model_append_sample(&s, &g_model_window)) {
+            g_model_window.rule_class = classify_rule_window(&g_model_window);
+            if (xQueueOverwrite(q_model_window, &g_model_window) != pdPASS) {
+                port_log("[modelo] no se pudo encolar ventana IMU");
             }
+        }
+
+        fall_model_result_t model_result;
+        while (xQueueReceive(q_model_result, &model_result, 0) == pdTRUE) {
+            compare_rule_model_window(&model_result);
+            if (t_model_log_ms == 0u ||
+                (uint32_t)(model_result.window_t_ms - t_model_log_ms) >= 1000u) {
+                const uint32_t compared_windows =
+                    g_rule_model_comparison[1][1] +
+                    g_rule_model_comparison[1][0] +
+                    g_rule_model_comparison[0][1] +
+                    g_rule_model_comparison[0][0];
+                const float agreement = compared_windows > 0u
+                    ? 100.0f *
+                          (float)(g_rule_model_comparison[1][1] +
+                                  g_rule_model_comparison[0][0]) /
+                          (float)compared_windows
+                    : 0.0f;
+                t_model_log_ms = model_result.window_t_ms;
+                port_log("[comparacion] t=%u ms reglas=%s modelo=%s p=%.3f | "
+                         "reglas(no/pre/caida)=%u/%u/%u "
+                         "TP=%u FN=%u FP=%u TN=%u acuerdo=%.1f%% n=%u",
+                         (unsigned)model_result.window_t_ms,
+                         rule_class_name(model_result.rule_class),
+                         model_result.probability >= FALL_MODEL_THRESHOLD
+                             ? "caida" : "no-caida",
+                         (double)model_result.probability,
+                         (unsigned)g_rule_class_counts[FALL_RULE_CLASS_NON_FALL],
+                         (unsigned)g_rule_class_counts[FALL_RULE_CLASS_PRE_IMPACT],
+                         (unsigned)g_rule_class_counts[FALL_RULE_CLASS_FALL],
+                         (unsigned)g_rule_model_comparison[1][1],
+                         (unsigned)g_rule_model_comparison[1][0],
+                         (unsigned)g_rule_model_comparison[0][1],
+                         (unsigned)g_rule_model_comparison[0][0],
+                         (double)agreement, (unsigned)compared_windows);
+            }
+            const fall_event_t model_event = fall_detector_model_observe(
+                &g_fall, model_result.window_t_ms,
+                model_result.probability >= FALL_MODEL_THRESHOLD,
+                model_result.rule_class == FALL_RULE_CLASS_FALL,
+                model_result.peak_g);
+            handle_fall_event(model_event, model_result.window_t_ms,
+                              model_result.probability);
         }
 
         /* 3) Cada segundo, la actigrafia para tVitals. */
@@ -173,6 +467,37 @@ static void task_fall(void *)
                 band_activity_add(&g_act, pct);
                 xSemaphoreGive(g_act_mtx);
             }
+        }
+    }
+}
+
+static void task_fall_model(void *)
+{
+    static fall_model_window_t window;
+    if (!fall_model_init()) {
+        __atomic_store_n(&g_model_init_status, -1, __ATOMIC_RELEASE);
+        vTaskDelete(NULL);
+        return;
+    }
+    __atomic_store_n(&g_model_init_status, 1, __ATOMIC_RELEASE);
+    vTaskPrioritySet(NULL, BAND_PRIO_MODEL);
+
+    for (;;) {
+        if (xQueueReceive(q_model_window, &window, portMAX_DELAY) != pdTRUE) {
+            port_log("[modelo] error al recibir ventana");
+            continue;
+        }
+
+        fall_model_result_t result;
+        result.peak_g = window.peak_g;
+        result.window_t_ms = window.t_ms;
+        result.rule_class = window.rule_class;
+        if (!fall_model_infer(&window, &result.probability)) {
+            port_log("[modelo] inferencia fallida; ventana descartada");
+            continue;
+        }
+        if (xQueueSend(q_model_result, &result, 0) != pdTRUE) {
+            port_log("[modelo] cola de resultados llena; resultado descartado");
         }
     }
 }
@@ -390,10 +715,11 @@ static void task_system(void *)
                      (unsigned long)s.imu_errors, (unsigned long)s.ppg_errors);
 #if INCLUDE_uxTaskGetStackHighWaterMark
             /* Cuanta pila NO se ha usado nunca (minimo historico). Si baja de ~500 bytes, agrandar. */
-            port_log("[sistema] pila libre minima (bytes): fall=%lu vitals=%lu comm=%lu system=%lu",
+            port_log("[sistema] pila libre minima (bytes): fall=%lu vitals=%lu comm=%lu model=%lu system=%lu",
                      (unsigned long)(uxTaskGetStackHighWaterMark(h_fall)   * sizeof(StackType_t)),
                      (unsigned long)(uxTaskGetStackHighWaterMark(h_vitals) * sizeof(StackType_t)),
                      (unsigned long)(uxTaskGetStackHighWaterMark(h_comm)   * sizeof(StackType_t)),
+                     (unsigned long)(uxTaskGetStackHighWaterMark(h_model)  * sizeof(StackType_t)),
                      (unsigned long)(uxTaskGetStackHighWaterMark(h_system) * sizeof(StackType_t)));
 #endif
         }
@@ -429,7 +755,22 @@ bool band_tasks_start(void)
     q_tx  = xQueueCreate(BAND_TX_QUEUE_LEN,  sizeof(tx_item_t));
     q_rx  = xQueueCreate(BAND_RX_QUEUE_LEN,  sizeof(rx_item_t));
     q_cmd = xQueueCreate(BAND_CMD_QUEUE_LEN, sizeof(uint8_t));
-    if (!g_clock_mtx || !g_act_mtx || !g_latest_mtx || !q_tx || !q_rx || !q_cmd) return false;
+    q_model_window = xQueueCreate(1, sizeof(fall_model_window_t));
+    q_model_result = xQueueCreate(4, sizeof(fall_model_result_t));
+    if (!g_clock_mtx || !g_act_mtx || !g_latest_mtx || !q_tx || !q_rx ||
+        !q_cmd || !q_model_window || !q_model_result) return false;
+
+    g_model_init_status = 0;
+    if (xTaskCreate(task_fall_model, "tFallModel", BAND_STACK(BAND_STACK_MODEL),
+                    NULL, BAND_PRIO_MODEL_INIT, &h_model) != pdPASS) {
+        return false;
+    }
+    while (__atomic_load_n(&g_model_init_status, __ATOMIC_ACQUIRE) == 0) {
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    if (__atomic_load_n(&g_model_init_status, __ATOMIC_ACQUIRE) < 0) {
+        return false;
+    }
 
     bool ok = true;
     ok &= xTaskCreate(task_comm,   "tComm",   BAND_STACK(BAND_STACK_COMM),   NULL, BAND_PRIO_COMM,   &h_comm) == pdPASS;

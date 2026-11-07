@@ -1,0 +1,337 @@
+{
+  "dataset": "SisFall fallarchive raw CSV",
+  "classes": {
+    "0": "FallCheck=0",
+    "1": "FallCheck=1"
+  },
+  "preimpact_class_confirmed": false,
+  "input": {
+    "shape": [
+      200,
+      6
+    ],
+    "channels": [
+      "AccX",
+      "AccY",
+      "AccZ",
+      "GyrX",
+      "GyrY",
+      "GyrZ"
+    ],
+    "firmware_axis_transform": {
+      "AccX": "MPU6050.AccX",
+      "AccY": "-MPU6050.AccZ",
+      "AccZ": "MPU6050.AccY",
+      "GyrX": "MPU6050.GyrX",
+      "GyrY": "-MPU6050.GyrZ",
+      "GyrZ": "MPU6050.GyrY"
+    },
+    "units": {
+      "AccX": "g",
+      "AccY": "g",
+      "AccZ": "g",
+      "GyrX": "degrees/second",
+      "GyrY": "degrees/second",
+      "GyrZ": "degrees/second"
+    },
+    "sample_rate_hz": 100,
+    "window_stride_samples": 25,
+    "window_label_rule": "any FallCheck=1 in window",
+    "decision_threshold": 0.6,
+    "normalization": "z-score per channel, fitted on original and orientation-augmented training subjects only",
+    "normalization_mean": [
+      -0.002453002380207181,
+      -0.4782944619655609,
+      -0.04212145507335663,
+      -1.3044638633728027,
+      6.133726119995117,
+      -0.19422772526741028
+    ],
+    "normalization_scale": [
+      0.44134053587913513,
+      0.6616125702857971,
+      0.47762995958328247,
+      30.53186798095703,
+      40.58283996582031,
+      25.53897476196289
+    ]
+  },
+  "architecture": "Conv1D(32,5)-BN-MaxPool-Conv1D(64,3)-BN-MaxPool-Flatten-Dense(64)-sigmoid",
+  "training_subjects": [
+    "SA06",
+    "SA08",
+    "SA09",
+    "SA10",
+    "SA11",
+    "SA12",
+    "SA13",
+    "SA14",
+    "SA15",
+    "SA17",
+    "SA18",
+    "SA19",
+    "SA20",
+    "SA25",
+    "SA28",
+    "SA29",
+    "SA31",
+    "SA32",
+    "SA35",
+    "SA36"
+  ],
+  "validation_subjects": [
+    "SA07",
+    "SA16",
+    "SA22",
+    "SA27",
+    "SA37"
+  ],
+  "test_subjects": [
+    "SA21",
+    "SA23",
+    "SA24",
+    "SA26",
+    "SA30",
+    "SA33"
+  ],
+  "class_weights": {
+    "0": 0.6018388239289699,
+    "1": 2.954859456884231
+  },
+  "training_windows": 49618,
+  "original_training_windows": 24809,
+  "orientation_augmentation_rotations_per_window": 1,
+  "acceleration_gain_augmentation_range": [
+    0.85,
+    1.15
+  ],
+  "validation_windows": 6049,
+  "test_windows": 7125,
+  "epochs_completed": 13,
+  "test_metrics_float_model": {
+    "threshold": 0.6,
+    "accuracy": 0.9569122807017544,
+    "precision": 0.8838109992254066,
+    "recall": 0.8790446841294299,
+    "f1": 0.8814213982232523,
+    "true_positive": 1141,
+    "false_positive": 150,
+    "false_negative": 157,
+    "true_negative": 5677
+  },
+  "validation_metrics_int8_model": {
+    "threshold": 0.6,
+    "accuracy": 0.9621425028930402,
+    "precision": 0.8907563025210085,
+    "recall": 0.8949343339587242,
+    "f1": 0.8928404305100609,
+    "true_positive": 954,
+    "false_positive": 117,
+    "false_negative": 112,
+    "true_negative": 4866
+  },
+  "test_metrics_int8_model": {
+    "threshold": 0.6,
+    "accuracy": 0.9581754385964912,
+    "precision": 0.8949447077409163,
+    "recall": 0.8728813559322034,
+    "f1": 0.8837753510140407,
+    "true_positive": 1133,
+    "false_positive": 133,
+    "false_negative": 165,
+    "true_negative": 5694
+  },
+  "stationary_orientation_probe_int8": {
+    "orientations_tested_per_magnitude_and_gyro_profile": 26,
+    "gyro_profiles_dps": [
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.5,
+        1.2,
+        -0.4
+      ]
+    ],
+    "accelerometer_magnitudes_g": [
+      0.85,
+      0.87,
+      0.9,
+      0.95,
+      1.0,
+      1.05,
+      1.1
+    ],
+    "max_probability_by_magnitude_g": {
+      "0.85": {
+        "max_probability": 0.05859375,
+        "worst_case": {
+          "acceleration_g": 0.85,
+          "direction": [
+            -0.5773502588272095,
+            -0.5773502588272095,
+            0.5773502588272095
+          ],
+          "gyro_dps": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "0.87": {
+        "max_probability": 0.05859375,
+        "worst_case": {
+          "acceleration_g": 0.87,
+          "direction": [
+            -0.5773502588272095,
+            -0.5773502588272095,
+            0.5773502588272095
+          ],
+          "gyro_dps": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "0.9": {
+        "max_probability": 0.046875,
+        "worst_case": {
+          "acceleration_g": 0.9,
+          "direction": [
+            0.7071067690849304,
+            0.0,
+            0.7071067690849304
+          ],
+          "gyro_dps": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "0.95": {
+        "max_probability": 0.05859375,
+        "worst_case": {
+          "acceleration_g": 0.95,
+          "direction": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "gyro_dps": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "1.0": {
+        "max_probability": 0.05859375,
+        "worst_case": {
+          "acceleration_g": 1.0,
+          "direction": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "gyro_dps": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "1.05": {
+        "max_probability": 0.05859375,
+        "worst_case": {
+          "acceleration_g": 1.05,
+          "direction": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "gyro_dps": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "1.1": {
+        "max_probability": 0.046875,
+        "worst_case": {
+          "acceleration_g": 1.1,
+          "direction": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "gyro_dps": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "threshold": 0.6,
+    "max_probability": 0.05859375,
+    "all_below_threshold": true
+  },
+  "tflite_tensors": {
+    "input_shape": [
+      1,
+      200,
+      6
+    ],
+    "input_dtype": "<class 'numpy.int8'>",
+    "input_scale": 0.0993303433060646,
+    "input_zero_point": 15,
+    "output_shape": [
+      1,
+      1
+    ],
+    "output_dtype": "<class 'numpy.int8'>",
+    "output_scale": 0.00390625,
+    "output_zero_point": -128
+  },
+  "tflite_operators": [
+    "EXPAND_DIMS",
+    "CONV_2D",
+    "MUL",
+    "ADD",
+    "RESHAPE",
+    "EXPAND_DIMS",
+    "MAX_POOL_2D",
+    "RESHAPE",
+    "EXPAND_DIMS",
+    "CONV_2D",
+    "MUL",
+    "ADD",
+    "RESHAPE",
+    "EXPAND_DIMS",
+    "MAX_POOL_2D",
+    "RESHAPE",
+    "SHAPE",
+    "STRIDED_SLICE",
+    "PACK",
+    "RESHAPE",
+    "FULLY_CONNECTED",
+    "FULLY_CONNECTED",
+    "LOGISTIC",
+    "DELEGATE",
+    "DELEGATE",
+    "DELEGATE",
+    "DELEGATE",
+    "DELEGATE"
+  ],
+  "firmware_input_shape": [
+    1,
+    200,
+    6
+  ]
+}

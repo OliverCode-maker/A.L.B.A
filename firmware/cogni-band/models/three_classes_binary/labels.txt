@@ -1,0 +1,2 @@
+0 no_fall
+1 pre_impact_or_fall
