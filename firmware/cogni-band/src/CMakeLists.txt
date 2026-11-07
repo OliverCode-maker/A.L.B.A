@@ -27,7 +27,11 @@ idf_component_register(
         "../../common"
     REQUIRES
         esp_driver_i2c
+        esp_event
+        esp_netif
         esp_timer
+        esp_wifi
         freertos
         log
+        nvs_flash
 )

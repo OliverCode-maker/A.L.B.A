@@ -5,6 +5,7 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <esp_now.h>
+#include <esp_wifi.h>
 #include <esp_idf_version.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -25,6 +26,16 @@
 #define COMM_TB_HOST    "localhost"
 #define COMM_TB_PORT    8883
 #define COMM_TB_TOKEN   ""
+#endif
+
+// Opciones para la PRUEBA DE ENLACE con la pulsera (ver platformio.ini, env linktest):
+//   COMM_WIFI_DISABLED=1   no se conecta al router ni a la nube; solo ESP-NOW
+//   COMM_ESPNOW_CHANNEL=N  fija el canal de radio (debe ser el mismo de la pulsera)
+#ifndef COMM_WIFI_DISABLED
+#define COMM_WIFI_DISABLED 0
+#endif
+#ifndef COMM_ESPNOW_CHANNEL
+#define COMM_ESPNOW_CHANNEL 0       // 0 = no tocar el canal (usa el del router)
 #endif
 
 #ifndef COMM_UTC_OFFSET_MIN
@@ -58,20 +69,36 @@ const uint8_t BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 // ---- hora real (NTP) --------------------------------------------------------
 uint32_t epochSeconds() {
+#ifdef COMM_FAKE_EPOCH_S
+    // Solo para la prueba de enlace sin internet: una hora inventada que avanza con el reloj.
+    return (uint32_t)COMM_FAKE_EPOCH_S + millis() / 1000u;
+#else
     const time_t t = time(nullptr);
     return (t >= (time_t)ALBA_EPOCH_MIN_S) ? (uint32_t)t : 0u;   // 0 = aun no hay hora real
+#endif
 }
 
 uint64_t epochMillis() {
     if (epochSeconds() == 0u) return 0u;
+#ifdef COMM_FAKE_EPOCH_S
+    return (uint64_t)COMM_FAKE_EPOCH_S * 1000ULL + (uint64_t)millis();
+#else
     struct timeval tv;
     gettimeofday(&tv, nullptr);
     return (uint64_t)tv.tv_sec * 1000ULL + (uint64_t)(tv.tv_usec / 1000);
+#endif
 }
 
 // ---- ESP-NOW ----------------------------------------------------------------
 bool sendToBand(const uint8_t *buf, size_t len, void *) {
-    return esp_now_send(BROADCAST, buf, len) == ESP_OK;
+    const bool ok = esp_now_send(BROADCAST, buf, len) == ESP_OK;
+    alba_hdr_t h;
+    if (len >= sizeof h) {
+        memcpy(&h, buf, sizeof h);
+        Serial.printf("[comm] TX a la pulsera: tipo=%u seq=%u (%u B) %s\n", (unsigned)h.type, (unsigned)h.seq,
+                      (unsigned)len, ok ? "enviado" : "RECHAZADO por la radio");
+    }
+    return ok;
 }
 
 // El callback corre en la tarea de WiFi: SOLO copia a la cola. Lo demas lo hace loop().
@@ -101,6 +128,7 @@ bool startEspNow() {
 
 // ---- WiFi / MQTT ------------------------------------------------------------
 void ensureWifi(uint32_t now) {
+    if (COMM_WIFI_DISABLED) return;
     if (WiFi.status() == WL_CONNECTED) return;
     if (lastWifiTry != 0 && now - lastWifiTry < WIFI_RETRY_MS) return;
     lastWifiTry = now ? now : 1;
@@ -108,6 +136,7 @@ void ensureWifi(uint32_t now) {
 }
 
 void ensureMqtt(uint32_t now) {
+    if (COMM_WIFI_DISABLED) return;
     if (mqtt.connected() || WiFi.status() != WL_CONNECTED) return;
     if (lastMqttTry != 0 && now - lastMqttTry < MQTT_RETRY_MS) return;
     lastMqttTry = now ? now : 1;
@@ -127,10 +156,16 @@ void initCommunication() {
     rxQueue = xQueueCreate(RX_QUEUE_LEN, sizeof(RxPacket));
 
     WiFi.mode(WIFI_STA);
+#if !COMM_WIFI_DISABLED
     WiFi.begin(COMM_WIFI_SSID, COMM_WIFI_PASS);
     lastWifiTry = millis() ? millis() : 1;
+#endif
+#if COMM_ESPNOW_CHANNEL != 0
+    esp_wifi_set_channel(COMM_ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
+#endif
 
     if (!startEspNow()) Serial.println("[comm] ERROR: no se pudo iniciar ESP-NOW");
+    else Serial.printf("[comm] ESP-NOW listo | MAC del robot %s | broadcast\n", WiFi.macAddress().c_str());
     configTime(0, 0, "pool.ntp.org", "time.google.com");   // hora UTC; el desfase local va en el mensaje HORA
 
 #ifdef COMM_TB_CA_CERT
@@ -152,6 +187,12 @@ void procesarComunicacionesBackground() {
 
     RxPacket p;
     while (xQueueReceive(rxQueue, &p, 0) == pdTRUE) {
+        alba_hdr_t h;
+        if (p.len >= sizeof h) {
+            memcpy(&h, p.data, sizeof h);
+            Serial.printf("[comm] RX de la pulsera: tipo=%u seq=%u (%u B)\n", (unsigned)h.type, (unsigned)h.seq,
+                          (unsigned)p.len);
+        }
         comm_core_on_packet(&core, p.data, p.len, now, epochMillis());
     }
 

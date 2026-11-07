@@ -27,6 +27,7 @@
 #include "alba_codec.h"
 #include "band_os.h"
 #include "band_port.h"
+#include "band_radio.h"
 #include "band_tasks.h"
 
 /* ---- Guion ----------------------------------------------------------------- */
@@ -136,6 +137,7 @@ uint16_t port_battery_mv(void)
     return (uint16_t)(BAT_START_MV + (BAT_END_MV - BAT_START_MV) * t / BAT_DROP_S);
 }
 
+#if !BAND_RADIO_REAL   /* con radio real el robot es de verdad: no se simula */
 /* ---- Robot simulado ---------------------------------------------------------------
  * port_send() es lo que la pulsera cree que es "esp_now_send". Aqui el robot
  * valida el paquete como lo hara el ESP32-S3 real, lo convierte a JSON y lo
@@ -205,10 +207,16 @@ static void task_sim_robot(void *)
     }
 }
 
+#endif /* !BAND_RADIO_REAL */
+
 void port_start(void)
 {
+#if BAND_RADIO_REAL
+    port_radio_start();                  /* prueba de enlace: sensores simulados, robot REAL */
+#else
     q_robot = xQueueCreate(2, sizeof(robot_job_t));
     xTaskCreate(task_sim_robot, "simRobot", BAND_STACK(4096u), NULL, 1, NULL);
+#endif
 }
 
 #endif /* BAND_SIM */
