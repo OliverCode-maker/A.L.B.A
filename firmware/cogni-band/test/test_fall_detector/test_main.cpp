@@ -198,6 +198,23 @@ void test_activity_percentage(void)
     TEST_ASSERT_EQUAL_UINT8(0,  fall_detector_take_activity_pct(&fd));   // se reinicio
 }
 
+void test_lowpass_reduces_vibration_without_clipping_impact_peak(void)
+{
+    for (int i = 0; i < 100; i++) {
+        feed(0.0f, 0.0f, (i % 2) ? 1.2f : 0.8f);
+    }
+
+    const uint16_t last_index =
+        (uint16_t)((fd.head + FALL_RING_LEN - 1u) % FALL_RING_LEN);
+    const float filtered_svm = (float)fd.ring[last_index].svm / 1000.0f;
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 1.0f, filtered_svm);
+
+    feed(0.0f, 0.0f, 4.0f);
+    TEST_ASSERT_EQUAL_INT(FALL_ST_POST, fall_detector_state(&fd));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 4.0f,
+                             fall_detector_features(&fd)->svm_max);
+}
+
 void test_custom_classifier_is_used(void)
 {
     fall_config_t cfg;
@@ -207,6 +224,28 @@ void test_custom_classifier_is_used(void)
 
     do_bump(3.5f);                                // la heuristica lo rechazaria; el modelo no
     TEST_ASSERT_EQUAL_INT(1, n_cand);
+}
+
+void test_model_only_mode_uses_external_candidates(void)
+{
+    fall_config_t cfg;
+    fall_config_default(&cfg);
+    cfg.model_only = true;
+    fall_detector_init(&fd, &cfg);
+
+    do_fall(0.0f);
+    TEST_ASSERT_EQUAL_INT(0, n_cand + n_conf + n_canc + n_rej);
+
+    const fall_event_t candidate = fall_detector_model_candidate(&fd, T, 3.5f);
+    count_event(candidate);
+    TEST_ASSERT_EQUAL_INT(FALL_EVT_CANDIDATE, candidate);
+    TEST_ASSERT_EQUAL_FLOAT(3.5f, fall_detector_features(&fd)->svm_max);
+
+    fall_detector_cancel(&fd);
+    feed(0.0f, 0.0f, 1.0f);
+    TEST_ASSERT_EQUAL_INT(1, n_canc);
+    TEST_ASSERT_EQUAL_INT(FALL_EVT_NONE,
+                          fall_detector_model_candidate(&fd, T, 4.0f));
 }
 
 void test_no_history_at_boot_does_not_crash(void)
@@ -249,7 +288,9 @@ int main(int, char **)
     RUN_TEST(test_freefall_without_impact_times_out);
     RUN_TEST(test_refractory_period_suppresses_cascade);
     RUN_TEST(test_activity_percentage);
+    RUN_TEST(test_lowpass_reduces_vibration_without_clipping_impact_peak);
     RUN_TEST(test_custom_classifier_is_used);
+    RUN_TEST(test_model_only_mode_uses_external_candidates);
     RUN_TEST(test_no_history_at_boot_does_not_crash);
     RUN_TEST(test_timestamp_wraparound);
     RUN_TEST(test_ram_footprint);

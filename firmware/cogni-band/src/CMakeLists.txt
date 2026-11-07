@@ -2,6 +2,8 @@ idf_component_register(
     SRCS
         "main.c"
         "band_tasks.c"
+        "fall_model.cpp"
+        "../models/fall_detector/fall_detector_model_data.c"
         "port_idf.c"
         "port_sim.c"
         "port_battery.c"
@@ -26,6 +28,7 @@ idf_component_register(
         "../lib/wake_detector"
         "../../common"
     REQUIRES
+        esp-tflite-micro
         esp_driver_i2c
         esp_timer
         freertos

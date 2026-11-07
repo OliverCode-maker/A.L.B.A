@@ -1,0 +1,1081 @@
+{
+  "comparison_type": "independent_test_sets_not_head_to_head",
+  "direct_metric_comparison_valid": false,
+  "reason": "Three Classes has three unlabeled raw channels and three unknown one-hot meanings; FallArchive has six physical IMU channels and a binary FallCheck label. Their test samples and target definitions differ.",
+  "three_classes_algorithmic": {
+    "dataset": "SisFall Enhanced - Three Classes",
+    "split": "test",
+    "samples": 18884,
+    "input_shape": [
+      512,
+      3
+    ],
+    "feature": "per-sample Euclidean magnitude of the three raw channels",
+    "channel_meaning": "unverified",
+    "units": "unverified; thresholds are in raw dataset units",
+    "rule": {
+      "non_fall": "no threshold crossing in the window",
+      "pre_impact": "freefall or impact threshold crossed, without a low-then-high sequence",
+      "fall": "a low-magnitude sample occurs before a high-magnitude sample",
+      "threshold_units": "raw dataset values; physical units not confirmed"
+    },
+    "fixed_initial_thresholds": {
+      "freefall": 0.5,
+      "impact": 2.5,
+      "prediction_counts": {
+        "non_fall": 0,
+        "pre_impact": 18884,
+        "fall": 0
+      },
+      "metrics_by_assumed_label_permutation": {
+        "0,1,2": {
+          "assumed_one_hot_columns": {
+            "non_fall": 0,
+            "pre_impact": 1,
+            "fall": 2
+          },
+          "accuracy": 0.008313916543105274,
+          "macro_precision": 0.0027713055143684245,
+          "macro_recall": 0.3333333333333333,
+          "macro_f1": 0.00549691017628626,
+          "per_class": {
+            "non_fall": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 18180
+            },
+            "pre_impact": {
+              "precision": 0.008313916543105274,
+              "recall": 1.0,
+              "f1": 0.01649073052885878,
+              "support": 157
+            },
+            "fall": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 547
+            }
+          },
+          "confusion_matrix": [
+            [
+              0,
+              18180,
+              0
+            ],
+            [
+              0,
+              157,
+              0
+            ],
+            [
+              0,
+              547,
+              0
+            ]
+          ],
+          "confusion_matrix_order": [
+            "non_fall",
+            "pre_impact",
+            "fall"
+          ]
+        },
+        "0,2,1": {
+          "assumed_one_hot_columns": {
+            "non_fall": 0,
+            "pre_impact": 2,
+            "fall": 1
+          },
+          "accuracy": 0.02896632069476806,
+          "macro_precision": 0.009655440231589353,
+          "macro_recall": 0.3333333333333333,
+          "macro_f1": 0.01876726193539533,
+          "per_class": {
+            "non_fall": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 18180
+            },
+            "pre_impact": {
+              "precision": 0.02896632069476806,
+              "recall": 1.0,
+              "f1": 0.05630178580618599,
+              "support": 547
+            },
+            "fall": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 157
+            }
+          },
+          "confusion_matrix": [
+            [
+              0,
+              18180,
+              0
+            ],
+            [
+              0,
+              547,
+              0
+            ],
+            [
+              0,
+              157,
+              0
+            ]
+          ],
+          "confusion_matrix_order": [
+            "non_fall",
+            "pre_impact",
+            "fall"
+          ]
+        },
+        "1,0,2": {
+          "assumed_one_hot_columns": {
+            "non_fall": 1,
+            "pre_impact": 0,
+            "fall": 2
+          },
+          "accuracy": 0.9627197627621267,
+          "macro_precision": 0.32090658758737556,
+          "macro_recall": 0.3333333333333333,
+          "macro_f1": 0.32700194258579757,
+          "per_class": {
+            "non_fall": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 157
+            },
+            "pre_impact": {
+              "precision": 0.9627197627621267,
+              "recall": 1.0,
+              "f1": 0.9810058277573926,
+              "support": 18180
+            },
+            "fall": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 547
+            }
+          },
+          "confusion_matrix": [
+            [
+              0,
+              157,
+              0
+            ],
+            [
+              0,
+              18180,
+              0
+            ],
+            [
+              0,
+              547,
+              0
+            ]
+          ],
+          "confusion_matrix_order": [
+            "non_fall",
+            "pre_impact",
+            "fall"
+          ]
+        },
+        "1,2,0": {
+          "assumed_one_hot_columns": {
+            "non_fall": 1,
+            "pre_impact": 2,
+            "fall": 0
+          },
+          "accuracy": 0.02896632069476806,
+          "macro_precision": 0.009655440231589353,
+          "macro_recall": 0.3333333333333333,
+          "macro_f1": 0.01876726193539533,
+          "per_class": {
+            "non_fall": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 157
+            },
+            "pre_impact": {
+              "precision": 0.02896632069476806,
+              "recall": 1.0,
+              "f1": 0.05630178580618599,
+              "support": 547
+            },
+            "fall": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 18180
+            }
+          },
+          "confusion_matrix": [
+            [
+              0,
+              157,
+              0
+            ],
+            [
+              0,
+              547,
+              0
+            ],
+            [
+              0,
+              18180,
+              0
+            ]
+          ],
+          "confusion_matrix_order": [
+            "non_fall",
+            "pre_impact",
+            "fall"
+          ]
+        },
+        "2,0,1": {
+          "assumed_one_hot_columns": {
+            "non_fall": 2,
+            "pre_impact": 0,
+            "fall": 1
+          },
+          "accuracy": 0.9627197627621267,
+          "macro_precision": 0.32090658758737556,
+          "macro_recall": 0.3333333333333333,
+          "macro_f1": 0.32700194258579757,
+          "per_class": {
+            "non_fall": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 547
+            },
+            "pre_impact": {
+              "precision": 0.9627197627621267,
+              "recall": 1.0,
+              "f1": 0.9810058277573926,
+              "support": 18180
+            },
+            "fall": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 157
+            }
+          },
+          "confusion_matrix": [
+            [
+              0,
+              547,
+              0
+            ],
+            [
+              0,
+              18180,
+              0
+            ],
+            [
+              0,
+              157,
+              0
+            ]
+          ],
+          "confusion_matrix_order": [
+            "non_fall",
+            "pre_impact",
+            "fall"
+          ]
+        },
+        "2,1,0": {
+          "assumed_one_hot_columns": {
+            "non_fall": 2,
+            "pre_impact": 1,
+            "fall": 0
+          },
+          "accuracy": 0.008313916543105274,
+          "macro_precision": 0.0027713055143684245,
+          "macro_recall": 0.3333333333333333,
+          "macro_f1": 0.00549691017628626,
+          "per_class": {
+            "non_fall": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 547
+            },
+            "pre_impact": {
+              "precision": 0.008313916543105274,
+              "recall": 1.0,
+              "f1": 0.01649073052885878,
+              "support": 157
+            },
+            "fall": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 18180
+            }
+          },
+          "confusion_matrix": [
+            [
+              0,
+              547,
+              0
+            ],
+            [
+              0,
+              157,
+              0
+            ],
+            [
+              0,
+              18180,
+              0
+            ]
+          ],
+          "confusion_matrix_order": [
+            "non_fall",
+            "pre_impact",
+            "fall"
+          ]
+        }
+      }
+    },
+    "calibration": {
+      "method": "threshold candidates are quantiles of training-window minima/maxima; macro-F1, then accuracy, selects thresholds on validation data",
+      "selection_split": "val",
+      "quantiles": [
+        0.05,
+        0.1,
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        0.6,
+        0.7,
+        0.8,
+        0.9,
+        0.95
+      ],
+      "freefall_candidate_count": 11,
+      "impact_candidate_count": 11,
+      "metrics_by_assumed_label_permutation": {
+        "0,1,2": {
+          "assumed_one_hot_columns": {
+            "non_fall": 0,
+            "pre_impact": 1,
+            "fall": 2
+          },
+          "thresholds_raw_units": {
+            "freefall": 0.0018623311771079898,
+            "impact": 0.6595931053161621
+          },
+          "validation_metrics_for_threshold_selection": {
+            "accuracy": 0.8997182820145307,
+            "macro_precision": 0.345173911109524,
+            "macro_recall": 0.44746744199400973,
+            "macro_f1": 0.3481753580551665,
+            "per_class": {
+              "non_fall": {
+                "precision": 0.9872458712596065,
+                "recall": 0.9306376200996763,
+                "f1": 0.9581063210790796,
+                "support": 19463
+              },
+              "pre_impact": {
+                "precision": 0.04827586206896552,
+                "recall": 0.4117647058823529,
+                "f1": 0.08641975308641976,
+                "support": 221
+              },
+              "fall": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "support": 549
+              }
+            },
+            "confusion_matrix": [
+              [
+                18113,
+                1350,
+                0
+              ],
+              [
+                129,
+                91,
+                1
+              ],
+              [
+                105,
+                444,
+                0
+              ]
+            ],
+            "confusion_matrix_order": [
+              "non_fall",
+              "pre_impact",
+              "fall"
+            ]
+          },
+          "test_metrics": {
+            "accuracy": 0.8968438890065664,
+            "macro_precision": 0.6656586973956703,
+            "macro_recall": 0.359785388386803,
+            "macro_f1": 0.33271908908682085,
+            "per_class": {
+              "non_fall": {
+                "precision": 0.9839967411545624,
+                "recall": 0.93008800880088,
+                "f1": 0.9562832258794253,
+                "support": 18180
+              },
+              "pre_impact": {
+                "precision": 0.012979351032448377,
+                "recall": 0.14012738853503184,
+                "f1": 0.023758099352051833,
+                "support": 157
+              },
+              "fall": {
+                "precision": 1.0,
+                "recall": 0.009140767824497258,
+                "f1": 0.018115942028985508,
+                "support": 547
+              }
+            },
+            "confusion_matrix": [
+              [
+                16909,
+                1271,
+                0
+              ],
+              [
+                135,
+                22,
+                0
+              ],
+              [
+                140,
+                402,
+                5
+              ]
+            ],
+            "confusion_matrix_order": [
+              "non_fall",
+              "pre_impact",
+              "fall"
+            ]
+          },
+          "test_prediction_counts": {
+            "non_fall": 17184,
+            "pre_impact": 1695,
+            "fall": 5
+          }
+        },
+        "0,2,1": {
+          "assumed_one_hot_columns": {
+            "non_fall": 0,
+            "pre_impact": 2,
+            "fall": 1
+          },
+          "thresholds_raw_units": {
+            "freefall": 0.0018623311771079898,
+            "impact": 0.6595931053161621
+          },
+          "validation_metrics_for_threshold_selection": {
+            "accuracy": 0.9172144516384125,
+            "macro_precision": 0.7409298792792853,
+            "macro_recall": 0.5813018921254706,
+            "macro_f1": 0.44398229436242226,
+            "per_class": {
+              "non_fall": {
+                "precision": 0.9872458712596065,
+                "recall": 0.9306376200996763,
+                "f1": 0.9581063210790796,
+                "support": 19463
+              },
+              "pre_impact": {
+                "precision": 0.23554376657824933,
+                "recall": 0.8087431693989071,
+                "f1": 0.36483155299917824,
+                "support": 549
+              },
+              "fall": {
+                "precision": 1.0,
+                "recall": 0.004524886877828055,
+                "f1": 0.00900900900900901,
+                "support": 221
+              }
+            },
+            "confusion_matrix": [
+              [
+                18113,
+                1350,
+                0
+              ],
+              [
+                105,
+                444,
+                0
+              ],
+              [
+                129,
+                91,
+                1
+              ]
+            ],
+            "confusion_matrix_order": [
+              "non_fall",
+              "pre_impact",
+              "fall"
+            ]
+          },
+          "test_metrics": {
+            "accuracy": 0.9167019699216268,
+            "macro_precision": 0.4070549609158276,
+            "macro_recall": 0.5550019139634865,
+            "macro_f1": 0.43829720374987685,
+            "per_class": {
+              "non_fall": {
+                "precision": 0.9839967411545624,
+                "recall": 0.93008800880088,
+                "f1": 0.9562832258794253,
+                "support": 18180
+              },
+              "pre_impact": {
+                "precision": 0.23716814159292035,
+                "recall": 0.7349177330895795,
+                "f1": 0.35860838537020523,
+                "support": 547
+              },
+              "fall": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "support": 157
+              }
+            },
+            "confusion_matrix": [
+              [
+                16909,
+                1271,
+                0
+              ],
+              [
+                140,
+                402,
+                5
+              ],
+              [
+                135,
+                22,
+                0
+              ]
+            ],
+            "confusion_matrix_order": [
+              "non_fall",
+              "pre_impact",
+              "fall"
+            ]
+          },
+          "test_prediction_counts": {
+            "non_fall": 17184,
+            "pre_impact": 1695,
+            "fall": 5
+          }
+        },
+        "1,0,2": {
+          "assumed_one_hot_columns": {
+            "non_fall": 1,
+            "pre_impact": 0,
+            "fall": 2
+          },
+          "thresholds_raw_units": {
+            "freefall": 0.04157211631536484,
+            "impact": 0.6595931053161621
+          },
+          "validation_metrics_for_threshold_selection": {
+            "accuracy": 0.9166707853506647,
+            "macro_precision": 0.44351167257492047,
+            "macro_recall": 0.44807599919673463,
+            "macro_f1": 0.4446704528443526,
+            "per_class": {
+              "non_fall": {
+                "precision": 0.0023923444976076554,
+                "recall": 0.00904977375565611,
+                "f1": 0.0037842951750236514,
+                "support": 221
+              },
+              "pre_impact": {
+                "precision": 0.9757772572402045,
+                "recall": 0.9417356008837281,
+                "f1": 0.9584542578502888,
+                "support": 19463
+              },
+              "fall": {
+                "precision": 0.3523654159869494,
+                "recall": 0.39344262295081966,
+                "f1": 0.37177280550774533,
+                "support": 549
+              }
+            },
+            "confusion_matrix": [
+              [
+                2,
+                147,
+                72
+              ],
+              [
+                809,
+                18329,
+                325
+              ],
+              [
+                25,
+                308,
+                216
+              ]
+            ],
+            "confusion_matrix_order": [
+              "non_fall",
+              "pre_impact",
+              "fall"
+            ]
+          },
+          "test_metrics": {
+            "accuracy": 0.9228976911671256,
+            "macro_precision": 0.42920433692323584,
+            "macro_recall": 0.45407483481728855,
+            "macro_f1": 0.4364309514431372,
+            "per_class": {
+              "non_fall": {
+                "precision": 0.017699115044247787,
+                "recall": 0.06369426751592357,
+                "f1": 0.02770083102493075,
+                "support": 157
+              },
+              "pre_impact": {
+                "precision": 0.9749830201494227,
+                "recall": 0.9475247524752475,
+                "f1": 0.961057799598304,
+                "support": 18180
+              },
+              "fall": {
+                "precision": 0.29493087557603687,
+                "recall": 0.3510054844606947,
+                "f1": 0.32053422370617696,
+                "support": 547
+              }
+            },
+            "confusion_matrix": [
+              [
+                10,
+                128,
+                19
+              ],
+              [
+                514,
+                17226,
+                440
+              ],
+              [
+                41,
+                314,
+                192
+              ]
+            ],
+            "confusion_matrix_order": [
+              "non_fall",
+              "pre_impact",
+              "fall"
+            ]
+          },
+          "test_prediction_counts": {
+            "non_fall": 565,
+            "pre_impact": 17668,
+            "fall": 651
+          }
+        },
+        "1,2,0": {
+          "assumed_one_hot_columns": {
+            "non_fall": 1,
+            "pre_impact": 2,
+            "fall": 0
+          },
+          "thresholds_raw_units": {
+            "freefall": 0.04157211631536484,
+            "impact": 0.22229816764593124
+          },
+          "validation_metrics_for_threshold_selection": {
+            "accuracy": 0.8790589630801167,
+            "macro_precision": 0.34534285441815843,
+            "macro_recall": 0.38485734191331106,
+            "macro_f1": 0.34826339565843084,
+            "per_class": {
+              "non_fall": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "support": 221
+              },
+              "pre_impact": {
+                "precision": 0.07017543859649122,
+                "recall": 0.24772313296903462,
+                "f1": 0.1093687173301166,
+                "support": 549
+              },
+              "fall": {
+                "precision": 0.965853124657984,
+                "recall": 0.9068488927708986,
+                "f1": 0.9354214696451758,
+                "support": 19463
+              }
+            },
+            "confusion_matrix": [
+              [
+                0,
+                10,
+                211
+              ],
+              [
+                0,
+                136,
+                413
+              ],
+              [
+                21,
+                1792,
+                17650
+              ]
+            ],
+            "confusion_matrix_order": [
+              "non_fall",
+              "pre_impact",
+              "fall"
+            ]
+          },
+          "test_metrics": {
+            "accuracy": 0.9117242109722516,
+            "macro_precision": 0.3619032594653793,
+            "macro_recall": 0.4025608228098861,
+            "macro_f1": 0.37216730084132904,
+            "per_class": {
+              "non_fall": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "support": 157
+              },
+              "pre_impact": {
+                "precision": 0.11675933280381255,
+                "recall": 0.2687385740402194,
+                "f1": 0.16279069767441862,
+                "support": 547
+              },
+              "fall": {
+                "precision": 0.9689504455923256,
+                "recall": 0.9389438943894389,
+                "f1": 0.9537112048495684,
+                "support": 18180
+              }
+            },
+            "confusion_matrix": [
+              [
+                0,
+                10,
+                147
+              ],
+              [
+                0,
+                147,
+                400
+              ],
+              [
+                8,
+                1102,
+                17070
+              ]
+            ],
+            "confusion_matrix_order": [
+              "non_fall",
+              "pre_impact",
+              "fall"
+            ]
+          },
+          "test_prediction_counts": {
+            "non_fall": 8,
+            "pre_impact": 1259,
+            "fall": 17617
+          }
+        },
+        "2,0,1": {
+          "assumed_one_hot_columns": {
+            "non_fall": 2,
+            "pre_impact": 0,
+            "fall": 1
+          },
+          "thresholds_raw_units": {
+            "freefall": 0.04157211631536484,
+            "impact": 0.6595931053161621
+          },
+          "validation_metrics_for_threshold_selection": {
+            "accuracy": 0.9106904561854396,
+            "macro_precision": 0.3743789007075389,
+            "macro_recall": 0.43768826556888524,
+            "macro_f1": 0.38907240379545893,
+            "per_class": {
+              "non_fall": {
+                "precision": 0.029904306220095694,
+                "recall": 0.04553734061930783,
+                "f1": 0.036101083032490974,
+                "support": 549
+              },
+              "pre_impact": {
+                "precision": 0.9757772572402045,
+                "recall": 0.9417356008837281,
+                "f1": 0.9584542578502888,
+                "support": 19463
+              },
+              "fall": {
+                "precision": 0.11745513866231648,
+                "recall": 0.3257918552036199,
+                "f1": 0.1726618705035971,
+                "support": 221
+              }
+            },
+            "confusion_matrix": [
+              [
+                25,
+                308,
+                216
+              ],
+              [
+                809,
+                18329,
+                325
+              ],
+              [
+                2,
+                147,
+                72
+              ]
+            ],
+            "confusion_matrix_order": [
+              "non_fall",
+              "pre_impact",
+              "fall"
+            ]
+          },
+          "test_metrics": {
+            "accuracy": 0.9153780978606227,
+            "macro_precision": 0.358911753242128,
+            "macro_recall": 0.3811660523054599,
+            "macro_f1": 0.3606095032542819,
+            "per_class": {
+              "non_fall": {
+                "precision": 0.07256637168141593,
+                "recall": 0.07495429616087751,
+                "f1": 0.07374100719424459,
+                "support": 547
+              },
+              "pre_impact": {
+                "precision": 0.9749830201494227,
+                "recall": 0.9475247524752475,
+                "f1": 0.961057799598304,
+                "support": 18180
+              },
+              "fall": {
+                "precision": 0.029185867895545316,
+                "recall": 0.12101910828025478,
+                "f1": 0.04702970297029703,
+                "support": 157
+              }
+            },
+            "confusion_matrix": [
+              [
+                41,
+                314,
+                192
+              ],
+              [
+                514,
+                17226,
+                440
+              ],
+              [
+                10,
+                128,
+                19
+              ]
+            ],
+            "confusion_matrix_order": [
+              "non_fall",
+              "pre_impact",
+              "fall"
+            ]
+          },
+          "test_prediction_counts": {
+            "non_fall": 565,
+            "pre_impact": 17668,
+            "fall": 651
+          }
+        },
+        "2,1,0": {
+          "assumed_one_hot_columns": {
+            "non_fall": 2,
+            "pre_impact": 1,
+            "fall": 0
+          },
+          "thresholds_raw_units": {
+            "freefall": 0.04157211631536484,
+            "impact": 0.22229816764593124
+          },
+          "validation_metrics_for_threshold_selection": {
+            "accuracy": 0.8728315128750062,
+            "macro_precision": 0.3236710277927714,
+            "macro_recall": 0.31736592051639306,
+            "macro_f1": 0.3148950058613455,
+            "per_class": {
+              "non_fall": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "support": 549
+              },
+              "pre_impact": {
+                "precision": 0.005159958720330237,
+                "recall": 0.04524886877828054,
+                "f1": 0.009263547938860583,
+                "support": 221
+              },
+              "fall": {
+                "precision": 0.965853124657984,
+                "recall": 0.9068488927708986,
+                "f1": 0.9354214696451758,
+                "support": 19463
+              }
+            },
+            "confusion_matrix": [
+              [
+                0,
+                136,
+                413
+              ],
+              [
+                0,
+                10,
+                211
+              ],
+              [
+                21,
+                1792,
+                17650
+              ]
+            ],
+            "confusion_matrix_order": [
+              "non_fall",
+              "pre_impact",
+              "fall"
+            ]
+          },
+          "test_metrics": {
+            "accuracy": 0.9044693920779496,
+            "macro_precision": 0.32563108578256234,
+            "macro_recall": 0.33421272063512086,
+            "macro_f1": 0.32261183287829304,
+            "per_class": {
+              "non_fall": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "support": 547
+              },
+              "pre_impact": {
+                "precision": 0.007942811755361398,
+                "recall": 0.06369426751592357,
+                "f1": 0.014124293785310734,
+                "support": 157
+              },
+              "fall": {
+                "precision": 0.9689504455923256,
+                "recall": 0.9389438943894389,
+                "f1": 0.9537112048495684,
+                "support": 18180
+              }
+            },
+            "confusion_matrix": [
+              [
+                0,
+                147,
+                400
+              ],
+              [
+                0,
+                10,
+                147
+              ],
+              [
+                8,
+                1102,
+                17070
+              ]
+            ],
+            "confusion_matrix_order": [
+              "non_fall",
+              "pre_impact",
+              "fall"
+            ]
+          },
+          "test_prediction_counts": {
+            "non_fall": 8,
+            "pre_impact": 1259,
+            "fall": 17617
+          }
+        }
+      },
+      "label_mapping": "unknown; calibration and test metrics are reported for all six possible one-hot column permutations; none is selected as authoritative"
+    }
+  },
+  "fallarchive_tensorflow": {
+    "metrics_file": "C:\\Users\\gabys\\Documents\\GitHub\\A.L.B.A\\firmware\\cogni-band\\models\\fall_detector\\test_metrics.json",
+    "test_set": {
+      "float_model": {
+        "threshold": 0.6,
+        "accuracy": 0.9512982456140351,
+        "precision": 0.8433212996389892,
+        "recall": 0.8998459167950693,
+        "f1": 0.8706671636228104,
+        "true_positive": 1168,
+        "false_positive": 217,
+        "false_negative": 130,
+        "true_negative": 5610
+      },
+      "int8_model": {
+        "threshold": 0.6,
+        "accuracy": 0.9503157894736842,
+        "precision": 0.8532934131736527,
+        "recall": 0.8782742681047766,
+        "f1": 0.8656036446469249,
+        "true_positive": 1140,
+        "false_positive": 196,
+        "false_negative": 158,
+        "true_negative": 5631
+      }
+    }
+  },
+  "limitations": [
+    "Three Classes magnitude thresholds are raw values; physical units are unverified.",
+    "Threshold calibration selects parameters on the validation split and therefore depends on label meaning; all six label permutations are reported.",
+    "Three Classes channel meanings, units, sampling rate, and class-column order are unverified.",
+    "FallArchive reports binary FallCheck metrics; pre-impact is not a confirmed class.",
+    "These independent test metrics cannot establish which system is more accurate on the same events.",
+    "Both datasets require validation with wrist-worn recordings before deployment claims."
+  ]
+}

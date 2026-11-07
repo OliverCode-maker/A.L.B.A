@@ -27,6 +27,18 @@
 #define BAND_ACTIVITY_PERIOD_MS   1000u    /* cada cuanto se pasa la actigrafia a vitales */
 #define BAND_SYSTEM_PERIOD_MS     1000u
 
+/* Reglas experimentales del clasificador Three Classes sobre la IMU en g y deg/s. */
+#define BAND_RULE_FREEFALL_G              0.5f
+#define BAND_RULE_IMPACT_G                2.5f
+#define BAND_RULE_DIRECT_IMPACT_G         3.2f
+#define BAND_RULE_FREEFALL_MIN_MS         60u
+#define BAND_RULE_FREEFALL_MAX_MS         400u
+#define BAND_RULE_IMPACT_WINDOW_MS        600u
+#define BAND_RULE_CONFIRM_GYRO_DPS        200.0f
+#define BAND_RULE_CONFIRM_ANGLE_DEG       40.0f
+#define BAND_RULE_CONFIRM_POST_STD_G      0.12f
+#define BAND_RULE_CONFIRM_WINDOW_MS       500u
+
 #if BAND_SIM_FAST
 #define BAND_TELEMETRY_PERIOD_S   5u
 #define BAND_STATS_PERIOD_S       30u
@@ -52,11 +64,14 @@
 #define BAND_PRIO_FALL     5     /* temporizacion estricta de 100 Hz        */
 #define BAND_PRIO_COMM     4     /* una alerta no debe esperar              */
 #define BAND_PRIO_VITALS   3
+#define BAND_PRIO_MODEL    2     /* inferencia fuera de la tarea de IMU       */
+#define BAND_PRIO_MODEL_INIT 6   /* inicializa TFLM antes de iniciar tFall    */
 #define BAND_PRIO_SYSTEM   2
 
 #define BAND_STACK_FALL    4096u
 #define BAND_STACK_COMM    4096u
 #define BAND_STACK_VITALS  4096u
+#define BAND_STACK_MODEL   16384u
 #define BAND_STACK_SYSTEM  4096u
 
 #endif /* BAND_CONFIG_H */

@@ -1,0 +1,36 @@
+{
+  "threshold": 0.6,
+  "validation_int8_model": {
+    "threshold": 0.6,
+    "accuracy": 0.9621425028930402,
+    "precision": 0.8907563025210085,
+    "recall": 0.8949343339587242,
+    "f1": 0.8928404305100609,
+    "true_positive": 954,
+    "false_positive": 117,
+    "false_negative": 112,
+    "true_negative": 4866
+  },
+  "float_model": {
+    "threshold": 0.6,
+    "accuracy": 0.9569122807017544,
+    "precision": 0.8838109992254066,
+    "recall": 0.8790446841294299,
+    "f1": 0.8814213982232523,
+    "true_positive": 1141,
+    "false_positive": 150,
+    "false_negative": 157,
+    "true_negative": 5677
+  },
+  "int8_model": {
+    "threshold": 0.6,
+    "accuracy": 0.9581754385964912,
+    "precision": 0.8949447077409163,
+    "recall": 0.8728813559322034,
+    "f1": 0.8837753510140407,
+    "true_positive": 1133,
+    "false_positive": 133,
+    "false_negative": 165,
+    "true_negative": 5694
+  }
+}

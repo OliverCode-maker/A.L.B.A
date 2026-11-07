@@ -107,7 +107,9 @@ typedef struct {
     uint32_t refractory_ms;         /* silencio tras cada evento resuelto (10000)             */
     float    score_th;              /* puntuacion minima para considerarlo caida (0.70)       */
     float    activity_th_g;         /* |SVM-1| sobre esto cuenta como actividad (0.05)        */
+    float    lowpass_hz;            /* corte del paso-bajas para features (5 Hz)              */
     fall_classifier_fn classifier;  /* NULL = heuristica por defecto                          */
+    bool     model_only;            /* true = solo procesa actividad/cancelacion; modelo externo decide */
 } fall_config_t;
 
 /* --- Estado interno (se declara aqui solo para poder asignarlo estaticamente) --- */
@@ -133,6 +135,11 @@ typedef struct {
     uint32_t last_t_ms;
     bool     have_last;
 
+    float    filtered_ax, filtered_ay, filtered_az;
+    float    filtered_gx, filtered_gy, filtered_gz;
+    uint32_t filter_t_ms;
+    bool     filter_initialized;
+
     uint32_t act_samples, act_total; /* para la actigrafia (porcentaje) */
 
     /* contadores utiles para depurar y para el informe */
@@ -145,8 +152,14 @@ void fall_config_default(fall_config_t *cfg);
 /** Inicializa el detector. `cfg` puede ser NULL para usar los valores por defecto. */
 void fall_detector_init(fall_detector_t *fd, const fall_config_t *cfg);
 
-/** Procesa UNA muestra del IMU. Llamar a frecuencia constante (~100 Hz). */
+/** Procesa UNA muestra del IMU. Llamar a frecuencia constante (~100 Hz).
+ *  Filtra las seis componentes para features; los umbrales y picos de impacto
+ *  se calculan con la magnitud de aceleracion sin filtrar. */
 fall_event_t fall_detector_process(fall_detector_t *fd, const fall_sample_t *sample);
+
+/** Inicia la ventana de confirmacion cuando un modelo externo detecta una caida. */
+fall_event_t fall_detector_model_candidate(fall_detector_t *fd, uint32_t now_ms,
+                                           float peak_g);
 
 /** El usuario (o el cuidador) pulso "cancelar". Solo tiene efecto en estado CONFIRM;
  *  el evento FALL_EVT_CANCELLED se devuelve en la siguiente llamada a process(). */

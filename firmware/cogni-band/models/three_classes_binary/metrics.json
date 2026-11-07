@@ -1,0 +1,58 @@
+{
+  "dataset": "SisFall Enhanced - Three Classes, archivos locales",
+  "label_mapping": {
+    "0": "no_fall",
+    "1": "pre_impact_or_fall"
+  },
+  "input_shape": [
+    512
+  ],
+  "training_samples": 233613,
+  "validation_samples": 60699,
+  "test_samples": 56652,
+  "class_weights": {
+    "0": 0.75,
+    "1": 1.5
+  },
+  "epochs_completed": 50,
+  "float_model": {
+    "threshold": 0.5,
+    "accuracy": 0.9764527289416084,
+    "precision": 0.9488950276243094,
+    "recall": 0.9822601143825461,
+    "f1": 0.9652893422148211,
+    "true_positive": 18549,
+    "false_positive": 999,
+    "false_negative": 335,
+    "true_negative": 36769
+  },
+  "int8_model": {
+    "threshold": 0.5,
+    "accuracy": 0.9760820447645273,
+    "precision": 0.9470543228768171,
+    "recall": 0.983213302266469,
+    "f1": 0.9647951362727012,
+    "true_positive": 18567,
+    "false_positive": 1038,
+    "false_negative": 317,
+    "true_negative": 36730
+  },
+  "tflite_tensors": {
+    "input_shape": [
+      1,
+      512
+    ],
+    "input_dtype": "<class 'numpy.int8'>",
+    "input_scale": 0.007106692995876074,
+    "input_zero_point": -4,
+    "output_shape": [
+      1,
+      1
+    ],
+    "output_dtype": "<class 'numpy.int8'>",
+    "output_scale": 0.00390625,
+    "output_zero_point": -128
+  },
+  "firmware_compatible": false,
+  "compatibility_note": "Standalone model for 512-value windows. The ESP32 firmware currently produces 200x6 IMU windows; source-channel mapping for these 512 values is unknown."
+}
