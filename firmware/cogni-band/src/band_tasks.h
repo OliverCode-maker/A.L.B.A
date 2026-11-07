@@ -6,6 +6,7 @@
 #ifndef BAND_TASKS_H
 #define BAND_TASKS_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 

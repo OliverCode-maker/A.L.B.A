@@ -15,11 +15,11 @@
  * BAND_SIM_FAST = 1: guion comprimido (~100 s) y detector de vigilia con
  *               ventanas cortas, solo para la demo. 0 = tiempos reales
  *               (el despertar tarda ~10 min en aparecer). */
-#ifndef BAND_SIM1
-#define BAND_SIM1        0
+#ifndef BAND_SIM
+#define BAND_SIM        0
 #endif
-#ifndef BAND_SIM_FAST1
-#define BAND_SIM_FAST1   0
+#ifndef BAND_SIM_FAST
+#define BAND_SIM_FAST   0
 #endif
 
 /* ---- Periodos ---------------------------------------------------------------*/
