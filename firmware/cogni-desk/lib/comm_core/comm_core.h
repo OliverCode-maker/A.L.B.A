@@ -29,7 +29,7 @@ extern "C" {
 #endif
 
 #define COMM_OUTBOX_CAP        16u    /* mensajes esperando para la nube        */
-#define COMM_JSON_MAX          200u   /* tamano maximo de un mensaje JSON       */
+#define COMM_JSON_MAX          256u   /* tamano maximo de un mensaje JSON       */
 #define COMM_BAND_OFFLINE_MS   (120u * 1000u)  /* sin paquetes en este tiempo = pulsera desconectada */
 #define COMM_ENV_INVALID_TEMP  INT16_MIN
 #define COMM_ENV_INVALID_HUM   0xFFu

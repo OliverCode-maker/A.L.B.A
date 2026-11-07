@@ -56,7 +56,8 @@ saber QUE falla aunque no haya cable:
 | `rb_wifi_ch` | canal del WiFi del robot. **La pulsera debe usar este mismo canal** |
 | `rb_rx` | paquetes validos recibidos de la pulsera. **0 = no se oyen (canal distinto o lejos)** |
 | `rb_rx_bad` | paquetes recibidos pero invalidos |
-| `rb_dup` / `rb_lost` | repetidos / perdidos (huecos en la secuencia) |
+| `rb_ntp` | 1 = el robot ya tiene hora real (NTP); 0 = sin hora, no envia HORA a la pulsera |
+| `rb_lost` | perdidos (huecos en la secuencia) |
 | `rb_band_reboots` | veces que se detecto que la pulsera se reinicio |
 | `rb_tx_fail` | envios del robot a la pulsera que la radio rechazo |
 | `rb_q_drop` | paquetes descartados porque el robot estaba ocupado |

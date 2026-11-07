@@ -1,0 +1,110 @@
+diff --git a/firmware/cogni-desk/docs/prueba-nube.md b/firmware/cogni-desk/docs/prueba-nube.md
+index d0ac712..a734d80 100644
+--- a/firmware/cogni-desk/docs/prueba-nube.md
++++ b/firmware/cogni-desk/docs/prueba-nube.md
+@@ -45,3 +45,27 @@ pulsera al panel del cuidador. Hace falta que la prueba de enlace ya funcione.
+   dejarlo corriendo horas.
+ - Sin certificado de la CA, el TLS cifra pero no verifica el servidor (solo pruebas).
+ - **Esto solo se reviso de sintaxis**: no se ha compilado con el SDK real ni probado en placas.
++
++## Sin monitor serie (placas con bateria): diagnostico en la nube
++Con `linktest-nube` el robot publica cada 10 s unos contadores al mismo dispositivo ("Latest telemetry"). Sirven para
++saber QUE falla aunque no haya cable:
++
++| Clave | Significa |
++|---|---|
++| `rb_up_s` | segundos desde que arranco el robot (si no cambia, el robot esta apagado o sin MQTT) |
++| `rb_wifi_ch` | canal del WiFi del robot. **La pulsera debe usar este mismo canal** |
++| `rb_rx` | paquetes validos recibidos de la pulsera. **0 = no se oyen (canal distinto o lejos)** |
++| `rb_rx_bad` | paquetes recibidos pero invalidos |
++| `rb_dup` / `rb_lost` | repetidos / perdidos (huecos en la secuencia) |
++| `rb_band_reboots` | veces que se detecto que la pulsera se reinicio |
++| `rb_tx_fail` | envios del robot a la pulsera que la radio rechazo |
++| `rb_q_drop` | paquetes descartados porque el robot estaba ocupado |
++| `rb_band_on` | 1 = se oye a la pulsera en los ultimos 2 minutos |
++
++Lectura rapida:
++- No aparece **nada** en ThingsBoard -> el robot no tiene WiFi o MQTT (credenciales, red 2.4 GHz, token).
++- Aparecen `rb_*` pero `rb_rx = 0` -> el robot esta en la nube pero no oye a la pulsera: **canal** o distancia.
++- `rb_rx` sube y aparecen `bpm`, `spo2`, `bat` -> todo el camino funciona.
++- Para ver que el robot tambien le habla a la pulsera: en la caida 1 pulsa BOOT del robot; si aparece en el registro de
++  eventos la fila `CANCELADA`, la pulsera recibio el CANCELAR y respondio (viaja pulsera -> robot -> nube).
++- Para cargar las placas hace falta USB una vez; despues se pueden desconectar y dejar con bateria.
+diff --git a/firmware/cogni-desk/platformio.ini b/firmware/cogni-desk/platformio.ini
+index fed7155..2df6990 100644
+--- a/firmware/cogni-desk/platformio.ini
++++ b/firmware/cogni-desk/platformio.ini
+@@ -76,3 +76,4 @@ lib_deps =
+ build_src_filter = -<*> +<CommManager.cpp> +<link_test_main.cpp>
+ build_flags =
+     -I../common
++    -DCOMM_DIAG=1
+diff --git a/firmware/cogni-desk/src/CommManager.cpp b/firmware/cogni-desk/src/CommManager.cpp
+index 9cc3b2e..21cbccc 100644
+--- a/firmware/cogni-desk/src/CommManager.cpp
++++ b/firmware/cogni-desk/src/CommManager.cpp
+@@ -34,6 +34,10 @@
+ #ifndef COMM_WIFI_DISABLED
+ #define COMM_WIFI_DISABLED 0
+ #endif
++// COMM_DIAG=1: cada 10 s publica contadores del enlace (rb_*) a la nube. Util sin monitor serie.
++#ifndef COMM_DIAG
++#define COMM_DIAG 0
++#endif
+ #ifndef COMM_ESPNOW_CHANNEL
+ #define COMM_ESPNOW_CHANNEL 0       // 0 = no tocar el canal (usa el del router)
+ #endif
+@@ -51,6 +55,7 @@ constexpr uint32_t ENV_PERIOD_MS      = 60000;
+ constexpr uint8_t  MAX_PUBLISH_PER_CALL = 4;
+ constexpr size_t   RX_MAX             = 64;      // los paquetes de la pulsera miden ~12 bytes
+ constexpr uint8_t  RX_QUEUE_LEN       = 8;
++constexpr uint32_t DIAG_PERIOD_MS     = 10000;   // diagnostico hacia la nube (solo si COMM_DIAG=1)
+ 
+ struct RxPacket {
+     uint8_t len;
+@@ -65,6 +70,8 @@ bool               started = false;
+ uint32_t           lastTick = 0, lastWifiTry = 0, lastMqttTry = 0, lastEnv = 0;
+ bool               haveEnvSent = false;
+ bool               wifiWasUp = false, mqttWasUp = false;
++uint32_t           lastDiag = 0;
++uint32_t           rxQueueDrops = 0;
+ uint32_t           publishedCount = 0;
+ 
+ const uint8_t BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+@@ -109,7 +116,7 @@ void enqueuePacket(const uint8_t *data, int len) {
+     RxPacket p;
+     p.len = (uint8_t)len;
+     memcpy(p.data, data, (size_t)len);
+-    xQueueSend(rxQueue, &p, 0);          // cola llena = se descarta (la pulsera reenvia lo critico)
++    if (xQueueSend(rxQueue, &p, 0) != pdTRUE) rxQueueDrops++;   // cola llena = se descarta (la pulsera reenvia lo critico)
+ }
+ 
+ #if ESP_IDF_VERSION_MAJOR >= 5
+@@ -209,6 +216,27 @@ void procesarComunicacionesBackground() {
+         comm_core_on_packet(&core, p.data, p.len, now, epochMillis());
+     }
+ 
++#if COMM_DIAG
++    // Diagnostico para cuando no hay monitor serie (placas con bateria): se ve en "Latest telemetry".
++    if (now - lastDiag >= DIAG_PERIOD_MS) {
++        lastDiag = now;
++        char d[COMM_JSON_MAX];
++        const uint64_t ms = epochMillis();
++        char ts_s[40];
++        ts_s[0] = '\0';
++        if (ms != 0u) snprintf(ts_s, sizeof ts_s, "\"ts\":%llu,", (unsigned long long)ms);
++        snprintf(d, sizeof d,
++                 "{%s\"values\":{\"rb_up_s\":%lu,\"rb_wifi_ch\":%d,\"rb_rx\":%lu,\"rb_rx_bad\":%lu,\"rb_dup\":%lu,"
++                 "\"rb_lost\":%lu,\"rb_band_reboots\":%lu,\"rb_tx_fail\":%lu,\"rb_q_drop\":%lu,\"rb_band_on\":%d}}",
++                 ts_s, (unsigned long)(now / 1000u), (int)WiFi.channel(),
++                 (unsigned long)core.link.rx_new, (unsigned long)core.link.rx_invalid, (unsigned long)core.link.rx_duplicate,
++                 (unsigned long)core.link.rx_lost, (unsigned long)core.link.band_reboots,
++                 (unsigned long)core.send_fail, (unsigned long)rxQueueDrops,
++                 comm_core_band_online(&core, now) ? 1 : 0);
++        comm_core_push_raw(&core, d, false);
++    }
++#endif
++
+     if (now - lastTick >= TICK_MS) {
+         lastTick = now;
+         comm_core_tick(&core, now, epochSeconds(), (int16_t)COMM_UTC_OFFSET_MIN);

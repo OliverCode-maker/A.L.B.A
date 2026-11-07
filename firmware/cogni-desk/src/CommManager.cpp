@@ -224,15 +224,17 @@ void procesarComunicacionesBackground() {
         const uint64_t ms = epochMillis();
         char ts_s[40];
         ts_s[0] = '\0';
-        if (ms != 0u) snprintf(ts_s, sizeof ts_s, "\"ts\":%llu,", (unsigned long long)ms);
+        if (ms != 0u) snprintf(ts_s, sizeof ts_s, "{\"ts\":%llu,\"values\":{", (unsigned long long)ms);
+        // Sin hora: JSON plano (ThingsBoard usa su propia hora). Con hora: {"ts":..,"values":{..}}.
         snprintf(d, sizeof d,
-                 "{%s\"values\":{\"rb_up_s\":%lu,\"rb_wifi_ch\":%d,\"rb_rx\":%lu,\"rb_rx_bad\":%lu,\"rb_dup\":%lu,"
-                 "\"rb_lost\":%lu,\"rb_band_reboots\":%lu,\"rb_tx_fail\":%lu,\"rb_q_drop\":%lu,\"rb_band_on\":%d}}",
-                 ts_s, (unsigned long)(now / 1000u), (int)WiFi.channel(),
-                 (unsigned long)core.link.rx_new, (unsigned long)core.link.rx_invalid, (unsigned long)core.link.rx_duplicate,
+                 "%s\"rb_up_s\":%lu,\"rb_wifi_ch\":%d,\"rb_rx\":%lu,\"rb_rx_bad\":%lu,\"rb_ntp\":%d,"
+                 "\"rb_lost\":%lu,\"rb_band_reboots\":%lu,\"rb_tx_fail\":%lu,\"rb_q_drop\":%lu,\"rb_band_on\":%d%s",
+                 ms != 0u ? ts_s : "{", (unsigned long)(now / 1000u), (int)WiFi.channel(),
+                 (unsigned long)core.link.rx_new, (unsigned long)core.link.rx_invalid, ms != 0u ? 1 : 0,
                  (unsigned long)core.link.rx_lost, (unsigned long)core.link.band_reboots,
                  (unsigned long)core.send_fail, (unsigned long)rxQueueDrops,
-                 comm_core_band_online(&core, now) ? 1 : 0);
+                 comm_core_band_online(&core, now) ? 1 : 0,
+                 ms != 0u ? "}}" : "}");
         comm_core_push_raw(&core, d, false);
     }
 #endif
@@ -295,6 +297,6 @@ void registrarTomaEnDashboard() {
     char json[COMM_JSON_MAX];
     const uint64_t ms = epochMillis();
     if (ms != 0u) snprintf(json, sizeof json, "{\"ts\":%llu,\"values\":{\"med_taken\":true}}", (unsigned long long)ms);
-    else          snprintf(json, sizeof json, "{\"values\":{\"med_taken\":true}}");
+    else          snprintf(json, sizeof json, "{\"med_taken\":true}");
     comm_core_push_raw(&core, json, true);
 }

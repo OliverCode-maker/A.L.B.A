@@ -176,10 +176,10 @@ void test_env_formats_temperature_and_humidity(void)
 void test_env_negative_and_partial_values(void)
 {
     comm_core_push_env(&c, 0, -25, COMM_ENV_INVALID_HUM);
-    TEST_ASSERT_EQUAL_STRING("{\"values\":{\"room_temp\":-2.5}}", comm_core_outbox_peek(&c));
+    TEST_ASSERT_EQUAL_STRING("{\"room_temp\":-2.5}", comm_core_outbox_peek(&c));
     comm_core_outbox_pop(&c);
     comm_core_push_env(&c, 0, COMM_ENV_INVALID_TEMP, 40);
-    TEST_ASSERT_EQUAL_STRING("{\"values\":{\"room_hum\":40}}", comm_core_outbox_peek(&c));
+    TEST_ASSERT_EQUAL_STRING("{\"room_hum\":40}", comm_core_outbox_peek(&c));
 }
 
 void test_env_with_nothing_valid_is_not_queued(void)
@@ -200,8 +200,8 @@ void test_band_online_and_offline(void)
 
 void test_push_raw_accepts_json_and_rejects_bad_input(void)
 {
-    TEST_ASSERT_TRUE(comm_core_push_raw(&c, "{\"values\":{\"med_taken\":true}}", true));
-    TEST_ASSERT_EQUAL_STRING("{\"values\":{\"med_taken\":true}}", comm_core_outbox_peek(&c));
+    TEST_ASSERT_TRUE(comm_core_push_raw(&c, "{\"med_taken\":true}", true));
+    TEST_ASSERT_EQUAL_STRING("{\"med_taken\":true}", comm_core_outbox_peek(&c));
     TEST_ASSERT_FALSE(comm_core_push_raw(&c, NULL, true));
     TEST_ASSERT_FALSE(comm_core_push_raw(&c, "no es json", true));
     char big[COMM_JSON_MAX + 10];

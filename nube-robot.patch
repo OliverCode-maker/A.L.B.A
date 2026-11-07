@@ -1,0 +1,178 @@
+diff --git a/firmware/cogni-desk/docs/prueba-nube.md b/firmware/cogni-desk/docs/prueba-nube.md
+new file mode 100644
+index 0000000..d0ac712
+--- /dev/null
++++ b/firmware/cogni-desk/docs/prueba-nube.md
+@@ -0,0 +1,47 @@
++# Prueba pulsera -> robot -> nube (ThingsBoard)
++
++Continua la prueba de enlace (`prueba-enlace.md`): ahora el robot se conecta a WiFi y publica lo que recibe de la
++pulsera al panel del cuidador. Hace falta que la prueba de enlace ya funcione.
++
++## Que se necesita
++- Pulsera con el firmware `link-test` (sensores simulados, radio real) y robot con `linktest-nube`.
++- Una red WiFi de **2.4 GHz** con internet y clave sencilla. **Recomendado: el hotspot de un celular.**
++  Las redes institucionales (con usuario/portal, p. ej. WPA2-Enterprise) no sirven con `WiFi.begin(ssid, clave)`.
++- El **token del dispositivo** de ThingsBoard (dispositivo "Pulsera ALBA": Devices -> Copy access token).
++- El panel y las alarmas ya creados (cloud/README.md).
++
++## Pasos
++1. **Credenciales del robot** (no se suben al repo):
++   ```bash
++   cd firmware/cogni-desk
++   cp include/comm_secrets.example.h include/comm_secrets.h
++   ```
++   Editar `comm_secrets.h`: `COMM_WIFI_SSID`, `COMM_WIFI_PASS`, `COMM_TB_TOKEN` (y dejar `COMM_TB_HOST "mqtt.thingsboard.cloud"`, puerto 8883).
++2. **Cargar el robot:** `pio run -e linktest-nube -t upload` y `pio device monitor`.
++   Debe imprimir: `WiFi conectado | canal N | IP ...` y despues `MQTT conectado a ThingsBoard`.
++3. **El canal:** anotar el `N` que imprime el robot. La pulsera debe usar **ese mismo canal**: en
++   `firmware/cogni-band/platformio.ini`, entorno `link-test`, cambiar `-DBAND_ESPNOW_CHANNEL=1` por `-DBAND_ESPNOW_CHANNEL=N`,
++   y recargar la pulsera: `pio run -e link-test -t upload`. (Si el canal del router cambia, hay que repetirlo.)
++4. **Reiniciar la pulsera** (RESET) y mirar el monitor del robot: cada paquete aparece como `RX de la pulsera` y despues
++   como `-> nube: {...}`. La linea `[test]` cada 5 s muestra `WiFi si | nube si | publicados=N`.
++5. **En ThingsBoard:** el panel debe mostrar pulso, SpO2 y bateria; el registro de eventos, las caidas; y en Alarms
++   la "Caida confirmada" (si en la caida 2 no se pulsa BOOT) o nada si se cancela. Cerca del final del guion
++   la bateria simulada baja y deberia aparecer "Bateria baja".
++
++## Si algo falla
++| Sintoma | Causa probable |
++|---|---|
++| `WiFi` nunca conecta | red 5 GHz o de institucion; SSID/clave mal; usar hotspot 2.4 GHz |
++| `MQTT no conecto (estado -2/-4)` | sin internet, hora/TLS, host o puerto mal; probar `ping` desde otra PC al mismo WiFi |
++| `MQTT no conecto (estado 5)` | token incorrecto (no autorizado) |
++| El robot se conecta pero no recibe nada de la pulsera | **canal distinto** (paso 3) |
++| Se recibe pero no aparece en el panel | `publicados=0`: ver el estado MQTT; si `publicados>0`, revisar el dispositivo/token en ThingsBoard |
++| Los datos llegan con la hora vieja o sin hora | el robot no obtuvo hora por internet (NTP); los mensajes salen sin `ts` y ThingsBoard usa su hora |
++
++## Cosas a saber
++- Cada intento de reconectar MQTT puede bloquear el robot ~5 s (como maximo cada 30 s). En la prueba no importa; en el
++  robot final hay que moverlo a una tarea aparte.
++- Con la guia rapida la pulsera manda telemetria cada 5 s; el plan gratuito de ThingsBoard tiene limite de datos: no
++  dejarlo corriendo horas.
++- Sin certificado de la CA, el TLS cifra pero no verifica el servidor (solo pruebas).
++- **Esto solo se reviso de sintaxis**: no se ha compilado con el SDK real ni probado en placas.
+diff --git a/firmware/cogni-desk/include/CommManager.h b/firmware/cogni-desk/include/CommManager.h
+index f1ac227..573e6e5 100644
+--- a/firmware/cogni-desk/include/CommManager.h
++++ b/firmware/cogni-desk/include/CommManager.h
+@@ -42,6 +42,12 @@ uint8_t commSpo2();         // 0xFF = sin medicion valida
+ uint8_t commBateria();      // 0xFF = la pulsera no mide su bateria
+ bool    commPulseraOnline();
+ 
++// Estado de la nube (para depurar y para la interfaz)
++bool     commWifiConectado();
++bool     commNubeConectada();
++uint32_t commMensajesPublicados();   // cuantos JSON se han enviado a ThingsBoard
++uint32_t commMensajesEnCola();       // cuantos esperan (sin WiFi/MQTT o con el servidor caido)
++
+ /** Temperatura (decimas de grado: 235 = 23.5 C) y humedad (%). Se envia como mucho una vez por minuto.
+  *  Usar INT16_MIN / 0xFF si el sensor no tiene lectura. */
+ void commPublicarAmbiente(int16_t temp_c_x10, uint8_t hum_pct);
+diff --git a/firmware/cogni-desk/platformio.ini b/firmware/cogni-desk/platformio.ini
+index 49ac948..fed7155 100644
+--- a/firmware/cogni-desk/platformio.ini
++++ b/firmware/cogni-desk/platformio.ini
+@@ -58,3 +58,21 @@ build_flags =
+     -DCOMM_WIFI_DISABLED=1
+     -DCOMM_ESPNOW_CHANNEL=1
+     -DCOMM_FAKE_EPOCH_S=1793016000
++
++; ---------------------------------------------------------------------------
++; Prueba pulsera -> robot -> NUBE (ThingsBoard). Igual que linktest pero CON WiFi:
++; necesita include/comm_secrets.h (WiFi + token; copiar de comm_secrets.example.h).
++;   pio run -e linktest-nube -t upload      y despues:   pio device monitor
++; El canal de ESP-NOW pasa a ser el del router: la pulsera debe usar el mismo canal.
++; Ver docs/prueba-nube.md.
++; ---------------------------------------------------------------------------
++[env:linktest-nube]
++platform = espressif32
++board = esp32-s3-devkitc-1
++framework = arduino
++monitor_speed = 115200
++lib_deps =
++    knolleary/PubSubClient @ ^2.8
++build_src_filter = -<*> +<CommManager.cpp> +<link_test_main.cpp>
++build_flags =
++    -I../common
+diff --git a/firmware/cogni-desk/src/CommManager.cpp b/firmware/cogni-desk/src/CommManager.cpp
+index a900168..9cc3b2e 100644
+--- a/firmware/cogni-desk/src/CommManager.cpp
++++ b/firmware/cogni-desk/src/CommManager.cpp
+@@ -64,6 +64,8 @@ PubSubClient       mqtt(tlsClient);
+ bool               started = false;
+ uint32_t           lastTick = 0, lastWifiTry = 0, lastMqttTry = 0, lastEnv = 0;
+ bool               haveEnvSent = false;
++bool               wifiWasUp = false, mqttWasUp = false;
++uint32_t           publishedCount = 0;
+ 
+ const uint8_t BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+ 
+@@ -129,7 +131,15 @@ bool startEspNow() {
+ // ---- WiFi / MQTT ------------------------------------------------------------
+ void ensureWifi(uint32_t now) {
+     if (COMM_WIFI_DISABLED) return;
+-    if (WiFi.status() == WL_CONNECTED) return;
++    const bool up = WiFi.status() == WL_CONNECTED;
++    if (up && !wifiWasUp) {
++        Serial.printf("[comm] WiFi conectado | canal %d | IP %s\n", (int)WiFi.channel(), WiFi.localIP().toString().c_str());
++        Serial.println("[comm] ATENCION: la pulsera debe usar este mismo canal (BAND_ESPNOW_CHANNEL)");
++    } else if (!up && wifiWasUp) {
++        Serial.println("[comm] WiFi desconectado");
++    }
++    wifiWasUp = up;
++    if (up) return;
+     if (lastWifiTry != 0 && now - lastWifiTry < WIFI_RETRY_MS) return;
+     lastWifiTry = now ? now : 1;
+     WiFi.begin(COMM_WIFI_SSID, COMM_WIFI_PASS);   // no bloquea: el estado se revisa en la siguiente vuelta
+@@ -137,7 +147,10 @@ void ensureWifi(uint32_t now) {
+ 
+ void ensureMqtt(uint32_t now) {
+     if (COMM_WIFI_DISABLED) return;
+-    if (mqtt.connected() || WiFi.status() != WL_CONNECTED) return;
++    const bool mq = mqtt.connected();
++    if (mqttWasUp && !mq) Serial.println("[comm] MQTT desconectado");
++    mqttWasUp = mq;
++    if (mq || WiFi.status() != WL_CONNECTED) return;
+     if (lastMqttTry != 0 && now - lastMqttTry < MQTT_RETRY_MS) return;
+     lastMqttTry = now ? now : 1;
+     if (!mqtt.connect("alba-robot", COMM_TB_TOKEN, nullptr)) {   // usuario = token del dispositivo
+@@ -213,11 +226,21 @@ void sincronizarDatosDashboardBackground() {
+     for (uint8_t i = 0; i < MAX_PUBLISH_PER_CALL; i++) {
+         const char *json = comm_core_outbox_peek(&core);
+         if (json == nullptr) break;
+-        if (!mqtt.publish(ALBA_TB_TOPIC, json)) break;   // no se quita de la cola: se reintenta
++        if (!mqtt.publish(ALBA_TB_TOPIC, json)) {        // no se quita de la cola: se reintenta
++            Serial.println("[comm] publicacion rechazada; se reintenta");
++            break;
++        }
++        publishedCount++;
++        Serial.printf("[comm] -> nube: %s\n", json);
+         comm_core_outbox_pop(&core);
+     }
+ }
+ 
++bool     commWifiConectado()       { return started && WiFi.status() == WL_CONNECTED; }
++bool     commNubeConectada()       { return started && mqtt.connected(); }
++uint32_t commMensajesPublicados()  { return publishedCount; }
++uint32_t commMensajesEnCola()      { return started ? (uint32_t)comm_core_outbox_count(&core) : 0u; }
++
+ void commBotonEstoyBien() {
+     if (started) comm_core_button_ok(&core, millis());
+ }
+diff --git a/firmware/cogni-desk/src/link_test_main.cpp b/firmware/cogni-desk/src/link_test_main.cpp
+index 1272c95..a8939e6 100644
+--- a/firmware/cogni-desk/src/link_test_main.cpp
++++ b/firmware/cogni-desk/src/link_test_main.cpp
+@@ -43,8 +43,10 @@ void loop() {
+ 
+     if (millis() - lastReport >= 5000) {
+         lastReport = millis();
+-        Serial.printf("[test] pulsera %s | bpm=%u spo2=%u bat=%u\n",
++        Serial.printf("[test] pulsera %s | bpm=%u spo2=%u bat=%u | WiFi %s | nube %s | publicados=%lu en cola=%lu\n",
+                       commPulseraOnline() ? "EN LINEA" : "sin senal",
+-                      (unsigned)commBpm(), (unsigned)commSpo2(), (unsigned)commBateria());
++                      (unsigned)commBpm(), (unsigned)commSpo2(), (unsigned)commBateria(),
++                      commWifiConectado() ? "si" : "no", commNubeConectada() ? "si" : "no",
++                      (unsigned long)commMensajesPublicados(), (unsigned long)commMensajesEnCola());
+     }
+ }

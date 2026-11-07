@@ -1,0 +1,492 @@
+diff --git a/firmware/cogni-band/platformio.ini b/firmware/cogni-band/platformio.ini
+index 2d63dc9..e590918 100644
+--- a/firmware/cogni-band/platformio.ini
++++ b/firmware/cogni-band/platformio.ini
+@@ -27,6 +27,22 @@ build_flags =
+     -DBAND_SIM=0
+     -DBAND_SIM_FAST=0
+ 
++; ---------------------------------------------------------------------------
++; Prueba de enlace con el robot: sensores SIMULADOS (guion rapido), radio ESP-NOW REAL.
++;   pio run -e link-test -t upload     y despues:   pio device monitor
++; Ver ../cogni-desk/docs/prueba-enlace.md.
++; ---------------------------------------------------------------------------
++[env:link-test]
++platform = espressif32
++board = lolin_s3_mini
++framework = espidf
++monitor_speed = 115200
++build_flags =
++    -DBAND_SIM=1
++    -DBAND_SIM_FAST=1
++    -DBAND_RADIO_REAL=1
++    -DBAND_ESPNOW_CHANNEL=1
++
+ ; ---------------------------------------------------------------------------
+ ; Pruebas en el PC (sin placa).   pio test -e native
+ ; Necesita un compilador de C/C++ instalado (gcc en Linux/Mac, MinGW en Windows).
+diff --git a/firmware/cogni-band/src/CMakeLists.txt b/firmware/cogni-band/src/CMakeLists.txt
+index 6b033d7..c746fed 100644
+--- a/firmware/cogni-band/src/CMakeLists.txt
++++ b/firmware/cogni-band/src/CMakeLists.txt
+@@ -27,7 +27,11 @@ idf_component_register(
+         "../../common"
+     REQUIRES
+         esp_driver_i2c
++        esp_event
++        esp_netif
+         esp_timer
++        esp_wifi
+         freertos
+         log
++        nvs_flash
+ )
+diff --git a/firmware/cogni-band/src/band_radio.h b/firmware/cogni-band/src/band_radio.h
+new file mode 100644
+index 0000000..c74b250
+--- /dev/null
++++ b/firmware/cogni-band/src/band_radio.h
+@@ -0,0 +1,32 @@
++/**
++ * band_radio.h
++ * Radio ESP-NOW de la pulsera.
++ *
++ *   BAND_RADIO_REAL = 1  usa la radio de verdad aunque los sensores sean simulados
++ *                        (es el modo de la "prueba de enlace": BAND_SIM=1 + BAND_RADIO_REAL=1).
++ *   BAND_SIM = 0         (sensores reales) siempre usa la radio real.
++ *   BAND_ESPNOW_CHANNEL  canal WiFi fijo. Debe ser el MISMO en el robot.
++ */
++#ifndef BAND_RADIO_H
++#define BAND_RADIO_H
++
++#include "band_config.h"
++
++#ifndef BAND_RADIO_REAL
++#define BAND_RADIO_REAL 0
++#endif
++
++#ifndef BAND_ESPNOW_CHANNEL
++#define BAND_ESPNOW_CHANNEL 1
++#endif
++
++#if !BAND_SIM || BAND_RADIO_REAL
++#define BAND_USE_REAL_RADIO 1
++#else
++#define BAND_USE_REAL_RADIO 0
++#endif
++
++/** Inicia WiFi (solo para ESP-NOW, sin conectarse a ningun router) y ESP-NOW. */
++void port_radio_start(void);
++
++#endif
+diff --git a/firmware/cogni-band/src/port_espnow.c b/firmware/cogni-band/src/port_espnow.c
+index ac0ca35..35c789d 100644
+--- a/firmware/cogni-band/src/port_espnow.c
++++ b/firmware/cogni-band/src/port_espnow.c
+@@ -1,13 +1,93 @@
++/**
++ * port_espnow.c
++ * Radio ESP-NOW de la pulsera (ESP-IDF).
++ *
++ * Todo va por BROADCAST (FF:FF:FF:FF:FF:FF): no hace falta saber la MAC del robot ni
++ * emparejar. Contras: no hay confirmacion de entrega ni reintentos de la radio (por eso la
++ * pulsera reenvia sus alertas), y cualquier robot cercano oye a la pulsera. Se cambia a
++ * unicast cuando se acuerde la MAC del robot.
++ */
+ #include "band_config.h"
++#include "band_radio.h"
+ 
+-#if !BAND_SIM
++#if BAND_USE_REAL_RADIO
++
++#include <string.h>
++
++#include "esp_err.h"
++#include "esp_event.h"
++#include "esp_netif.h"
++#include "esp_now.h"
++#include "esp_wifi.h"
++#include "nvs_flash.h"
+ 
+ #include "band_port.h"
+-#include "band_pins.h"
+-#include "port_i2c.h"
++#include "band_tasks.h"
++
++static const uint8_t BROADCAST_MAC[ESP_NOW_ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
++static bool s_ready;
++
++/* Corre en la tarea de WiFi: solo entrega el paquete a la cola de la pulsera. */
++static void on_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
++{
++    (void)info;
++    if (data == NULL || len <= 0) return;
++    (void)band_on_receive(data, (size_t)len);
++}
++
++void port_radio_start(void)
++{
++    esp_err_t err = nvs_flash_init();                 /* WiFi guarda calibracion en NVS */
++    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
++        ESP_ERROR_CHECK(nvs_flash_erase());
++        err = nvs_flash_init();
++    }
++    if (err != ESP_OK) { port_log("[radio] NVS fallo: %s", esp_err_to_name(err)); return; }
++
++    ESP_ERROR_CHECK(esp_netif_init());
++    ESP_ERROR_CHECK(esp_event_loop_create_default());
++    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
++    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
++    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
++    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
++    ESP_ERROR_CHECK(esp_wifi_start());
++    ESP_ERROR_CHECK(esp_wifi_set_channel(BAND_ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE));
++
++    err = esp_now_init();
++    if (err != ESP_OK) { port_log("[radio] esp_now_init fallo: %s", esp_err_to_name(err)); return; }
++    ESP_ERROR_CHECK(esp_now_register_recv_cb(on_recv));
++
++    esp_now_peer_info_t peer;
++    memset(&peer, 0, sizeof peer);
++    memcpy(peer.peer_addr, BROADCAST_MAC, ESP_NOW_ETH_ALEN);
++    peer.channel = BAND_ESPNOW_CHANNEL;
++    peer.ifidx = WIFI_IF_STA;
++    peer.encrypt = false;
++    err = esp_now_add_peer(&peer);
++    if (err != ESP_OK) { port_log("[radio] add_peer fallo: %s", esp_err_to_name(err)); return; }
++
++    uint8_t mac[6] = {0};
++    esp_wifi_get_mac(WIFI_IF_STA, mac);
++    port_log("[radio] ESP-NOW listo | canal %d | MAC de la pulsera %02X:%02X:%02X:%02X:%02X:%02X | broadcast",
++             BAND_ESPNOW_CHANNEL, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
++    s_ready = true;
++}
++
++bool port_send(const uint8_t *buf, size_t len)
++{
++    if (!s_ready || buf == NULL || len == 0u || len > ESP_NOW_MAX_DATA_LEN) return false;
++    return esp_now_send(BROADCAST_MAC, buf, len) == ESP_OK;
++}
++
++#endif /* BAND_USE_REAL_RADIO */
++
++#if !BAND_SIM
+ 
+ #include "esp_err.h"
+ 
++#include "band_pins.h"
++#include "port_i2c.h"
++
+ void port_start(void)
+ {
+     const esp_err_t err = port_i2c_init();
+@@ -17,15 +97,8 @@ void port_start(void)
+     } else {
+         port_log("[i2c] no se pudo iniciar el bus: %s", esp_err_to_name(err));
+     }
+-    port_log("[radio] ESP-NOW pendiente; port_send no enviara paquetes");
++    port_radio_start();
+     port_log("[bateria] medicion pendiente; port_battery_mv devolvera 0");
+ }
+ 
+-bool port_send(const uint8_t *buf, size_t len)
+-{
+-    (void)buf;
+-    (void)len;
+-    return false;
+-}
+-
+-#endif
+\ No newline at end of file
++#endif /* !BAND_SIM */
+diff --git a/firmware/cogni-band/src/port_sim.c b/firmware/cogni-band/src/port_sim.c
+index a6f7639..69ba0cf 100644
+--- a/firmware/cogni-band/src/port_sim.c
++++ b/firmware/cogni-band/src/port_sim.c
+@@ -27,6 +27,7 @@
+ #include "alba_codec.h"
+ #include "band_os.h"
+ #include "band_port.h"
++#include "band_radio.h"
+ #include "band_tasks.h"
+ 
+ /* ---- Guion ----------------------------------------------------------------- */
+@@ -136,6 +137,7 @@ uint16_t port_battery_mv(void)
+     return (uint16_t)(BAT_START_MV + (BAT_END_MV - BAT_START_MV) * t / BAT_DROP_S);
+ }
+ 
++#if !BAND_RADIO_REAL   /* con radio real el robot es de verdad: no se simula */
+ /* ---- Robot simulado ---------------------------------------------------------------
+  * port_send() es lo que la pulsera cree que es "esp_now_send". Aqui el robot
+  * valida el paquete como lo hara el ESP32-S3 real, lo convierte a JSON y lo
+@@ -205,10 +207,16 @@ static void task_sim_robot(void *)
+     }
+ }
+ 
++#endif /* !BAND_RADIO_REAL */
++
+ void port_start(void)
+ {
++#if BAND_RADIO_REAL
++    port_radio_start();                  /* prueba de enlace: sensores simulados, robot REAL */
++#else
+     q_robot = xQueueCreate(2, sizeof(robot_job_t));
+     xTaskCreate(task_sim_robot, "simRobot", BAND_STACK(4096u), NULL, 1, NULL);
++#endif
+ }
+ 
+ #endif /* BAND_SIM */
+diff --git a/firmware/cogni-desk/docs/prueba-enlace.md b/firmware/cogni-desk/docs/prueba-enlace.md
+new file mode 100644
+index 0000000..34debf6
+--- /dev/null
++++ b/firmware/cogni-desk/docs/prueba-enlace.md
+@@ -0,0 +1,50 @@
++# Prueba de enlace pulsera <-> robot (ESP-NOW)
++
++Objetivo: comprobar que la pulsera y el robot **se hablan de verdad por radio**, sin sensores, sin pantallas,
++sin WiFi del router y sin nube. Es la primera prueba de que el protocolo funciona fuera del PC.
++
++## Que se necesita
++- **2 placas ESP32-S3 con USB**: la de la pulsera (Super Mini de Gaby) y una del robot (la del devkit de Oliver, o cualquier S3).
++- **Nada mas**: ni MPU6050, ni MAX30102, ni pantallas, ni router, ni internet.
++- 2 computadoras (o 2 terminales) para ver los dos monitores serie a la vez.
++- Las placas a menos de unos metros.
++
++## Que corre en cada placa
++| Placa | Comando | Que hace |
++|---|---|---|
++| Pulsera | `cd firmware/cogni-band && pio run -e link-test -t upload` | Sensores **simulados** (guion rapido de ~100 s) + radio ESP-NOW **real**, canal 1 |
++| Robot | `cd firmware/cogni-desk && pio run -e linktest -t upload` | Solo `CommManager` + un `main` de prueba. Sin WiFi. El boton **BOOT** hace de "estoy bien" |
++
++Despues, en cada una: `pio device monitor` (115200). Si hay varias placas conectadas: `pio device list` y `--upload-port` / `--port`.
++Arrancar primero el robot (o ambos; da igual), y **reiniciar la pulsera** (boton RESET) para ver el guion desde el principio.
++
++## Guion de la pulsera (segundos desde el arranque)
++| t | Pulsera simula | Que deberia verse |
++|---|---|---|
++| 0-5 | arranque | Pulsera: `[radio] ESP-NOW listo | canal 1 | MAC ...`. Robot: `[comm] ESP-NOW listo | MAC ...` |
++| ~5 | primera telemetria | Robot: `[comm] RX de la pulsera: tipo=1 ...` y luego `[comm] TX a la pulsera: tipo=3 ... enviado` (la HORA). Pulsera: `[comm] hora recibida del robot: ...` |
++| ~10 | caida 1 | Pulsera: `POSIBLE CAIDA`. Robot: `RX tipo=2` y `>>> ¿ESTAS BIEN?`. **Pulsa BOOT en el robot** (en menos de 20 s) |
++| tras BOOT | | Robot: `TX a la pulsera: tipo=4` (CANCELAR, se repite 3 veces mas). Pulsera: `[comm] CANCELAR aceptado` y `caida CANCELADA` |
++| ~45 | caida 2 | Robot: `¿ESTAS BIEN?`. **No pulses nada**: a los 20 s la pulsera manda CONFIRMADA y el robot dice `Caida CONFIRMADA: 'ya avise a tu cuidador'` |
++| ~70 | despertar | Pulsera: `DESPERTAR DETECTADO`; el robot lo recibe como `RX tipo=2` |
++
++Cada 5 s el robot imprime `[test] pulsera EN LINEA | bpm=.. spo2=.. bat=..`.
++
++## Como saber si funciona
++- **Pulsera -> robot:** el robot imprime `RX de la pulsera` y los valores cambian en la linea `[test]`.
++- **Robot -> pulsera:** la pulsera imprime `hora recibida del robot` y `CANCELAR aceptado`.
++- Al final, en la pulsera (`[sistema] tx ok=.. fallo=..`) no debe haber `fallo` altos.
++
++## Si no se ven
++1. **Canal:** los dos usan el canal 1 (`BAND_ESPNOW_CHANNEL` y `COMM_ESPNOW_CHANNEL`). Si cambias uno, cambia el otro.
++2. **Placas muy lejos o con USB-hub raro:** acercarlas.
++3. **La pulsera dice `ENVIO FALLIDO`:** la radio rechazo el paquete; pega el log.
++4. **El robot no imprime nada de ESP-NOW:** pega las primeras lineas de su monitor.
++5. **Error de compilacion de PlatformIO:** pega el mensaje completo. Recuerda que este codigo **solo se reviso de sintaxis** y
++   no se ha compilado contra el SDK real: puede haber ajustes menores.
++
++## Lo que esta prueba NO cubre
++- Entrega confiable: usa *broadcast*, que no tiene confirmacion ni reintentos de la radio.
++- Interferencia con WiFi: en esta prueba el robot no se conecta al router. Con router, ESP-NOW usa el canal del router
++  y la pulsera debera usar ese mismo.
++- Sensores reales, bateria real, consumo de energia.
+diff --git a/firmware/cogni-desk/platformio.ini b/firmware/cogni-desk/platformio.ini
+index 5a50894..49ac948 100644
+--- a/firmware/cogni-desk/platformio.ini
++++ b/firmware/cogni-desk/platformio.ini
+@@ -37,3 +37,24 @@ build_flags = -I../common
+ platform = native
+ test_framework = unity
+ build_flags = -I../common
++
++; ---------------------------------------------------------------------------
++; Prueba de enlace pulsera <-> robot (sin WiFi, sin nube, sin pantallas).
++;   pio run -e linktest -t upload      y despues:   pio device monitor
++; Compila solo CommManager + link_test_main.cpp, asi que no depende del resto
++; del robot (que aun esta en construccion). Ver docs/prueba-enlace.md.
++; ---------------------------------------------------------------------------
++[env:linktest]
++platform = espressif32
++board = esp32-s3-devkitc-1
++framework = arduino
++monitor_speed = 115200
++lib_deps =
++    knolleary/PubSubClient @ ^2.8
++; COMM_FAKE_EPOCH_S = hora inventada (2026-10-26 12:00 UTC = 07:00 en Ecuador): no hay internet en esta prueba.
++build_src_filter = -<*> +<CommManager.cpp> +<link_test_main.cpp>
++build_flags =
++    -I../common
++    -DCOMM_WIFI_DISABLED=1
++    -DCOMM_ESPNOW_CHANNEL=1
++    -DCOMM_FAKE_EPOCH_S=1793016000
+diff --git a/firmware/cogni-desk/src/CommManager.cpp b/firmware/cogni-desk/src/CommManager.cpp
+index a59337c..a900168 100644
+--- a/firmware/cogni-desk/src/CommManager.cpp
++++ b/firmware/cogni-desk/src/CommManager.cpp
+@@ -5,6 +5,7 @@
+ #include <WiFiClientSecure.h>
+ #include <PubSubClient.h>
+ #include <esp_now.h>
++#include <esp_wifi.h>
+ #include <esp_idf_version.h>
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/queue.h"
+@@ -27,6 +28,16 @@
+ #define COMM_TB_TOKEN   ""
+ #endif
+ 
++// Opciones para la PRUEBA DE ENLACE con la pulsera (ver platformio.ini, env linktest):
++//   COMM_WIFI_DISABLED=1   no se conecta al router ni a la nube; solo ESP-NOW
++//   COMM_ESPNOW_CHANNEL=N  fija el canal de radio (debe ser el mismo de la pulsera)
++#ifndef COMM_WIFI_DISABLED
++#define COMM_WIFI_DISABLED 0
++#endif
++#ifndef COMM_ESPNOW_CHANNEL
++#define COMM_ESPNOW_CHANNEL 0       // 0 = no tocar el canal (usa el del router)
++#endif
++
+ #ifndef COMM_UTC_OFFSET_MIN
+ #define COMM_UTC_OFFSET_MIN (-300)
+ #endif
+@@ -58,20 +69,36 @@ const uint8_t BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+ 
+ // ---- hora real (NTP) --------------------------------------------------------
+ uint32_t epochSeconds() {
++#ifdef COMM_FAKE_EPOCH_S
++    // Solo para la prueba de enlace sin internet: una hora inventada que avanza con el reloj.
++    return (uint32_t)COMM_FAKE_EPOCH_S + millis() / 1000u;
++#else
+     const time_t t = time(nullptr);
+     return (t >= (time_t)ALBA_EPOCH_MIN_S) ? (uint32_t)t : 0u;   // 0 = aun no hay hora real
++#endif
+ }
+ 
+ uint64_t epochMillis() {
+     if (epochSeconds() == 0u) return 0u;
++#ifdef COMM_FAKE_EPOCH_S
++    return (uint64_t)COMM_FAKE_EPOCH_S * 1000ULL + (uint64_t)millis();
++#else
+     struct timeval tv;
+     gettimeofday(&tv, nullptr);
+     return (uint64_t)tv.tv_sec * 1000ULL + (uint64_t)(tv.tv_usec / 1000);
++#endif
+ }
+ 
+ // ---- ESP-NOW ----------------------------------------------------------------
+ bool sendToBand(const uint8_t *buf, size_t len, void *) {
+-    return esp_now_send(BROADCAST, buf, len) == ESP_OK;
++    const bool ok = esp_now_send(BROADCAST, buf, len) == ESP_OK;
++    alba_hdr_t h;
++    if (len >= sizeof h) {
++        memcpy(&h, buf, sizeof h);
++        Serial.printf("[comm] TX a la pulsera: tipo=%u seq=%u (%u B) %s\n", (unsigned)h.type, (unsigned)h.seq,
++                      (unsigned)len, ok ? "enviado" : "RECHAZADO por la radio");
++    }
++    return ok;
+ }
+ 
+ // El callback corre en la tarea de WiFi: SOLO copia a la cola. Lo demas lo hace loop().
+@@ -101,6 +128,7 @@ bool startEspNow() {
+ 
+ // ---- WiFi / MQTT ------------------------------------------------------------
+ void ensureWifi(uint32_t now) {
++    if (COMM_WIFI_DISABLED) return;
+     if (WiFi.status() == WL_CONNECTED) return;
+     if (lastWifiTry != 0 && now - lastWifiTry < WIFI_RETRY_MS) return;
+     lastWifiTry = now ? now : 1;
+@@ -108,6 +136,7 @@ void ensureWifi(uint32_t now) {
+ }
+ 
+ void ensureMqtt(uint32_t now) {
++    if (COMM_WIFI_DISABLED) return;
+     if (mqtt.connected() || WiFi.status() != WL_CONNECTED) return;
+     if (lastMqttTry != 0 && now - lastMqttTry < MQTT_RETRY_MS) return;
+     lastMqttTry = now ? now : 1;
+@@ -127,10 +156,16 @@ void initCommunication() {
+     rxQueue = xQueueCreate(RX_QUEUE_LEN, sizeof(RxPacket));
+ 
+     WiFi.mode(WIFI_STA);
++#if !COMM_WIFI_DISABLED
+     WiFi.begin(COMM_WIFI_SSID, COMM_WIFI_PASS);
+     lastWifiTry = millis() ? millis() : 1;
++#endif
++#if COMM_ESPNOW_CHANNEL != 0
++    esp_wifi_set_channel(COMM_ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
++#endif
+ 
+     if (!startEspNow()) Serial.println("[comm] ERROR: no se pudo iniciar ESP-NOW");
++    else Serial.printf("[comm] ESP-NOW listo | MAC del robot %s | broadcast\n", WiFi.macAddress().c_str());
+     configTime(0, 0, "pool.ntp.org", "time.google.com");   // hora UTC; el desfase local va en el mensaje HORA
+ 
+ #ifdef COMM_TB_CA_CERT
+@@ -152,6 +187,12 @@ void procesarComunicacionesBackground() {
+ 
+     RxPacket p;
+     while (xQueueReceive(rxQueue, &p, 0) == pdTRUE) {
++        alba_hdr_t h;
++        if (p.len >= sizeof h) {
++            memcpy(&h, p.data, sizeof h);
++            Serial.printf("[comm] RX de la pulsera: tipo=%u seq=%u (%u B)\n", (unsigned)h.type, (unsigned)h.seq,
++                          (unsigned)p.len);
++        }
+         comm_core_on_packet(&core, p.data, p.len, now, epochMillis());
+     }
+ 
+diff --git a/firmware/cogni-desk/src/link_test_main.cpp b/firmware/cogni-desk/src/link_test_main.cpp
+new file mode 100644
+index 0000000..1272c95
+--- /dev/null
++++ b/firmware/cogni-desk/src/link_test_main.cpp
+@@ -0,0 +1,50 @@
++// PRUEBA DE ENLACE pulsera <-> robot (solo ESP-NOW, sin WiFi, sin nube, sin pantallas).
++// Se compila con:  pio run -e linktest -t upload     (ver docs/prueba-enlace.md)
++//
++// El boton BOOT de la placa (GPIO0) hace de boton "estoy bien" del robot.
++#include <Arduino.h>
++
++#include "CommManager.h"
++
++static const uint8_t BTN_OK_PIN_TEST = 0;   // boton BOOT
++static uint32_t lastReport = 0;
++static bool lastBtn = true;
++
++void setup() {
++    Serial.begin(115200);
++    delay(1500);
++    Serial.println("\n=== ALBA: prueba de enlace (robot) ===");
++    pinMode(BTN_OK_PIN_TEST, INPUT_PULLUP);
++    initCommunication();
++    Serial.println("Esperando a la pulsera. Pulsa BOOT cuando aparezca '¿Estas bien?'.");
++}
++
++void loop() {
++    procesarComunicacionesBackground();
++    sincronizarDatosDashboardBackground();   // sin WiFi no hace nada
++
++    const bool btn = digitalRead(BTN_OK_PIN_TEST);
++    if (lastBtn && !btn) {                   // flanco de bajada = pulsado
++        if (commPromptCaidaActivo()) {
++            Serial.println("[test] BOTON OK pulsado -> se enviara CANCELAR a la pulsera");
++            commBotonEstoyBien();
++        } else {
++            Serial.println("[test] BOTON OK pulsado, pero no hay una caida que atender");
++        }
++        delay(30);                           // antirrebote simple
++    }
++    lastBtn = btn;
++
++    static bool prompted = false;
++    const bool p = commPromptCaidaActivo();
++    if (p && !prompted) Serial.println("[test] >>> ¿ESTAS BIEN? (tienes 20 s: pulsa BOOT)");
++    prompted = p;
++    if (commTomarAyudaAvisada()) Serial.println("[test] >>> Caida CONFIRMADA: 'ya avise a tu cuidador'");
++
++    if (millis() - lastReport >= 5000) {
++        lastReport = millis();
++        Serial.printf("[test] pulsera %s | bpm=%u spo2=%u bat=%u\n",
++                      commPulseraOnline() ? "EN LINEA" : "sin senal",
++                      (unsigned)commBpm(), (unsigned)commSpo2(), (unsigned)commBateria());
++    }
++}

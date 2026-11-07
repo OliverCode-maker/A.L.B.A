@@ -67,7 +67,10 @@ static inline int alba_telemetry_to_tb(const alba_telemetry_t *p, uint64_t epoch
     }
     if (n == 0u) return -1;                                /* nada valido que enviar */
 
-    const int w = snprintf(out, cap, "{%s\"values\":{%s}}", ts_s, vals);
+    /* Con hora: {"ts":..,"values":{..}}. Sin hora: JSON plano {..} (ThingsBoard pone su propia hora). */
+    const int w = (epoch_ms != 0u)
+        ? snprintf(out, cap, "{%s\"values\":{%s}}", ts_s, vals)
+        : snprintf(out, cap, "{%s}", vals);
     if (w < 0 || (size_t)w >= cap) { out[0] = '\0'; return -1; }
     return w;
 }
@@ -86,9 +89,13 @@ static inline int alba_event_to_tb(const alba_event_t *p, uint64_t epoch_ms,
     ts_s[0] = '\0';
     if (epoch_ms != 0u) snprintf(ts_s, sizeof ts_s, "\"ts\":%llu,", (unsigned long long)epoch_ms);
 
-    const int w = snprintf(out, cap,
-        "{%s\"values\":{\"alert\":\"%s\",\"confirm\":\"%s\",\"value\":%u}}",
-        ts_s, alert, confirm, (unsigned)p->valor_pico);
+    const int w = (epoch_ms != 0u)
+        ? snprintf(out, cap,
+            "{%s\"values\":{\"alert\":\"%s\",\"confirm\":\"%s\",\"value\":%u}}",
+            ts_s, alert, confirm, (unsigned)p->valor_pico)
+        : snprintf(out, cap,
+            "{\"alert\":\"%s\",\"confirm\":\"%s\",\"value\":%u}",
+            alert, confirm, (unsigned)p->valor_pico);
     if (w < 0 || (size_t)w >= cap) { out[0] = '\0'; return -1; }
     return w;
 }

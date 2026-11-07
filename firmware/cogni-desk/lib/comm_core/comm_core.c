@@ -163,7 +163,8 @@ void comm_core_push_env(comm_core_t *c, uint64_t epoch_ms, int16_t temp_c_x10, u
     char ts_s[40];
     ts_s[0] = '\0';
     if (epoch_ms != 0u) snprintf(ts_s, sizeof ts_s, "\"ts\":%llu,", (unsigned long long)epoch_ms);
-    w = snprintf(json, sizeof json, "{%s\"values\":{%s}}", ts_s, vals);
+    if (epoch_ms != 0u) w = snprintf(json, sizeof json, "{%s\"values\":{%s}}", ts_s, vals);
+    else                w = snprintf(json, sizeof json, "{%s}", vals);   /* sin hora: JSON plano */
     if (w > 0 && (size_t)w < sizeof json) outbox_push(c, json, false);
 }
 

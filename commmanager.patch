@@ -1,0 +1,905 @@
+diff --git a/firmware/cogni-desk/.gitignore b/firmware/cogni-desk/.gitignore
+index 89cc49c..84f8af4 100644
+--- a/firmware/cogni-desk/.gitignore
++++ b/firmware/cogni-desk/.gitignore
+@@ -3,3 +3,4 @@
+ .vscode/c_cpp_properties.json
+ .vscode/launch.json
+ .vscode/ipch
++include/comm_secrets.h
+diff --git a/firmware/cogni-desk/docs/commmanager.md b/firmware/cogni-desk/docs/commmanager.md
+new file mode 100644
+index 0000000..120135b
+--- /dev/null
++++ b/firmware/cogni-desk/docs/commmanager.md
+@@ -0,0 +1,42 @@
++# CommManager (comunicaciones del robot)
++
++Conecta el robot con la pulsera (ESP-NOW) y con el panel del cuidador (ThingsBoard por MQTT/TLS).
++
++```
++ pulsera --ESP-NOW--> onEspNowRecv (solo copia a una cola)
++                          |
++ loop():  procesarComunicacionesBackground()  -> comm_core (valida, descarta duplicados, asistente de caida)
++          sincronizarDatosDashboardBackground() -> WiFi + MQTT, publica la cola hacia ThingsBoard
++ pantallas/botones <- commPromptCaidaActivo(), commTomarAyudaAvisada(), commBpm() ...
++```
++
++* `lib/comm_core/` es C puro y esta probado en el PC: `pio test -e native -f test_comm_core` (19 pruebas).
++* `src/CommManager.cpp` es la capa fina con WiFi, NTP, ESP-NOW y MQTT. **Solo se comprobo la sintaxis** con
++  cabeceras de prueba; falta compilarla con PlatformIO y probarla en la placa.
++
++## Poner en marcha
++1. Copiar `include/comm_secrets.example.h` a `include/comm_secrets.h` y rellenar WiFi y token (no se sube al repo).
++2. `pio run -e esp32-s3-devkitc-1` (baja la libreria PubSubClient).
++3. Sin `comm_secrets.h` el robot compila igual pero no se conecta a nada.
++
++## Lo que main.cpp ya llama y ahora existe
++`initCommunication()`, `procesarComunicacionesBackground()`, `sincronizarDatosDashboardBackground()`,
++`registrarTomaEnDashboard()`.
++
++## Lo que la interfaz debe usar
++* Mientras `commPromptCaidaActivo()` sea true: mostrar "¿Estas bien?" y, si se pulsa OK, llamar `commBotonEstoyBien()`.
++  (Es el mismo boton OK del menu: durante la pregunta tiene prioridad.)
++* `commTomarAyudaAvisada()` devuelve true una sola vez cuando la caida se confirmo: mostrar "ya avise a tu cuidador".
++* Menu "Datos Cogni-Band": `commHayDatosPulsera()`, `commBpm()`, `commSpo2()`, `commBateria()`, `commPulseraOnline()`.
++* Temperatura y humedad: llamar `commPublicarAmbiente(temp_x10, hum)` con la lectura del sensor (se envia como mucho 1 vez/min).
++  Van como `room_temp` y `room_hum` al mismo dispositivo de ThingsBoard.
++
++## Limitaciones conocidas
++* **Canal WiFi:** con el robot conectado al router, ESP-NOW usa el canal del router. La pulsera debe usar el mismo
++  (pendiente de acordar). El envio a la pulsera es por *broadcast* (sin emparejar MAC): cualquier pulsera cercana lo oye.
++* `ensureMqtt` puede bloquear hasta ~5 s cuando intenta reconectar (cada 30 s como maximo). Si se nota en las pantallas,
++  moverlo a una tarea aparte.
++* Sin `COMM_TB_CA_CERT` el TLS cifra pero no verifica el servidor (solo pruebas).
++* Los mensajes que esperan en la cola (16) se pierden si se reinicia el robot; la telemetria se descarta antes que las alertas.
++* Si no hay hora real todavia, los mensajes salen sin `ts` y ThingsBoard usa la hora del servidor.
++* Un solo dispositivo de ThingsBoard (el de la pulsera) recibe tambien los datos del cuarto y de medicacion.
+diff --git a/firmware/cogni-desk/include/CommManager.h b/firmware/cogni-desk/include/CommManager.h
+index e69de29..f1ac227 100644
+--- a/firmware/cogni-desk/include/CommManager.h
++++ b/firmware/cogni-desk/include/CommManager.h
+@@ -0,0 +1,52 @@
++#ifndef COMM_MANAGER_H
++#define COMM_MANAGER_H
++
++/**
++ * CommManager: todas las comunicaciones del robot.
++ *   - ESP-NOW  <-> pulsera (recibe telemetria y alertas; manda HORA y CANCELAR)
++ *   - WiFi + NTP (hora real) 
++ *   - MQTT por TLS -> ThingsBoard (el panel del cuidador)
++ * La logica vive en lib/comm_core (probada en el PC). Este archivo solo la conecta
++ * con el hardware.
++ *
++ * Uso desde main.cpp (los tres primeros ya los llama main.cpp):
++ *     initCommunication();                  // en setup()
++ *     procesarComunicacionesBackground();   // en cada loop(), no bloquea
++ *     sincronizarDatosDashboardBackground();// en cada loop(); puede tardar unos segundos
++ *                                           //   cuando intenta reconectar al servidor
++ * Para la interfaz:
++ *     commPromptCaidaActivo()   -> mostrar "¿Estas bien?"  (y el boton OK llama commBotonEstoyBien())
++ *     commTomarAyudaAvisada()   -> true UNA vez: "ya avise a tu cuidador"
++ *     commHayDatosPulsera(), commBpm(), commSpo2(), commBateria(), commPulseraOnline()
++ *     commPublicarAmbiente(...) -> temperatura y humedad del cuarto hacia la nube
++ *
++ * Credenciales: crear include/comm_secrets.h a partir de comm_secrets.example.h.
++ * Ese archivo NO se sube al repositorio (esta en .gitignore).
++ */
++
++#include <stdbool.h>
++#include <stdint.h>
++
++void initCommunication();
++void procesarComunicacionesBackground();
++void sincronizarDatosDashboardBackground();
++
++/** Llamar cuando el paciente pulsa "estoy bien" mientras se muestra la pregunta. */
++void commBotonEstoyBien();
++bool commPromptCaidaActivo();
++bool commTomarAyudaAvisada();
++
++bool    commHayDatosPulsera();
++uint8_t commBpm();          // 0 = sin medicion valida
++uint8_t commSpo2();         // 0xFF = sin medicion valida
++uint8_t commBateria();      // 0xFF = la pulsera no mide su bateria
++bool    commPulseraOnline();
++
++/** Temperatura (decimas de grado: 235 = 23.5 C) y humedad (%). Se envia como mucho una vez por minuto.
++ *  Usar INT16_MIN / 0xFF si el sensor no tiene lectura. */
++void commPublicarAmbiente(int16_t temp_c_x10, uint8_t hum_pct);
++
++/** El paciente confirmo la toma de su medicamento (lo llama main.cpp via registrarTomaEnDashboard). */
++void registrarTomaEnDashboard();
++
++#endif
+diff --git a/firmware/cogni-desk/include/comm_secrets.example.h b/firmware/cogni-desk/include/comm_secrets.example.h
+new file mode 100644
+index 0000000..31a4ec5
+--- /dev/null
++++ b/firmware/cogni-desk/include/comm_secrets.example.h
+@@ -0,0 +1,23 @@
++// Copia este archivo como  include/comm_secrets.h  y rellenalo.
++// comm_secrets.h esta en .gitignore: NUNCA lo subas al repositorio (el repo es publico).
++#ifndef COMM_SECRETS_H
++#define COMM_SECRETS_H
++
++#define COMM_WIFI_SSID   "nombre-de-tu-wifi"
++#define COMM_WIFI_PASS   "clave-de-tu-wifi"
++
++// Servidor de ThingsBoard. En ThingsBoard Cloud: mqtt.thingsboard.cloud
++#define COMM_TB_HOST     "mqtt.thingsboard.cloud"
++#define COMM_TB_PORT     8883
++// Token de acceso del dispositivo "pulsera" (Device -> Copy access token)
++#define COMM_TB_TOKEN    "pega-aqui-el-token"
++
++// Hora local: Ecuador = UTC-5 = -300 minutos
++#define COMM_UTC_OFFSET_MIN  (-300)
++
++// (Opcional, recomendado) certificado de la CA del servidor, en formato PEM,
++// para verificar que el servidor es el verdadero. Sin esto la conexion va cifrada
++// pero NO se verifica la identidad del servidor (aceptable solo para pruebas).
++// #define COMM_TB_CA_CERT "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
++
++#endif
+diff --git a/firmware/cogni-desk/lib/comm_core/comm_core.c b/firmware/cogni-desk/lib/comm_core/comm_core.c
+new file mode 100644
+index 0000000..b7a7b36
+--- /dev/null
++++ b/firmware/cogni-desk/lib/comm_core/comm_core.c
+@@ -0,0 +1,182 @@
++#include "comm_core.h"
++
++#include <stdio.h>
++#include <string.h>
++
++#include "alba_thingsboard.h"
++
++/* ---- cola de salida --------------------------------------------------------- */
++
++static void outbox_remove_at(comm_core_t *c, size_t i)
++{
++    for (size_t k = i; k + 1u < c->out_count; k++) c->outbox[k] = c->outbox[k + 1u];
++    c->out_count--;
++}
++
++static void outbox_push(comm_core_t *c, const char *json, bool is_event)
++{
++    if (c->out_count == COMM_OUTBOX_CAP) {
++        /* Llena: se pierde primero la telemetria mas antigua; solo si todo son
++         * alertas se pierde la alerta mas antigua. */
++        size_t victim = 0u;
++        for (size_t i = 0; i < c->out_count; i++) {
++            if (!c->outbox[i].is_event) { victim = i; break; }
++        }
++        outbox_remove_at(c, victim);
++        c->out_dropped++;
++    }
++    comm_msg_t *m = &c->outbox[c->out_count++];
++    strncpy(m->json, json, COMM_JSON_MAX - 1u);
++    m->json[COMM_JSON_MAX - 1u] = '\0';
++    m->is_event = is_event;
++}
++
++bool comm_core_push_raw(comm_core_t *c, const char *json, bool is_event)
++{
++    if (json == NULL || json[0] != '{' || strlen(json) >= COMM_JSON_MAX) return false;
++    outbox_push(c, json, is_event);
++    return true;
++}
++
++const char *comm_core_outbox_peek(const comm_core_t *c)
++{
++    return c->out_count ? c->outbox[0].json : NULL;
++}
++
++void comm_core_outbox_pop(comm_core_t *c)
++{
++    if (c->out_count) outbox_remove_at(c, 0u);
++}
++
++size_t comm_core_outbox_count(const comm_core_t *c) { return c->out_count; }
++
++/* ---- envio a la pulsera ------------------------------------------------------ */
++
++static void send_to_band(comm_core_t *c, const void *pkt, size_t len)
++{
++    if (c->send == NULL || !c->send((const uint8_t *)pkt, len, c->send_ctx)) c->send_fail++;
++}
++
++static void apply_action(comm_core_t *c, robot_action_t a, uint16_t ref_seq)
++{
++    switch (a) {
++    case ROBOT_ACT_SHOW_PROMPT:
++        c->prompt_active = true;
++        break;
++    case ROBOT_ACT_HIDE_PROMPT:
++        c->prompt_active = false;
++        break;
++    case ROBOT_ACT_SHOW_HELP_CALLED:
++        c->prompt_active = false;
++        c->help_called = true;
++        break;
++    case ROBOT_ACT_SEND_CANCEL: {
++        alba_cancel_t m;
++        alba_pack_cancel(&m, c->tx_seq++, ref_seq);
++        send_to_band(c, &m, sizeof m);
++        c->prompt_active = false;
++        break;
++    }
++    case ROBOT_ACT_NONE:
++    default:
++        break;
++    }
++}
++
++/* ---- API ----------------------------------------------------------------------- */
++
++void comm_core_init(comm_core_t *c, comm_send_fn send, void *send_ctx)
++{
++    memset(c, 0, sizeof *c);
++    robot_link_init(&c->link);
++    robot_fall_init(&c->fall);
++    c->send = send;
++    c->send_ctx = send_ctx;
++}
++
++void comm_core_on_packet(comm_core_t *c, const uint8_t *buf, size_t len,
++                         uint32_t now_ms, uint64_t epoch_ms)
++{
++    robot_rx_msg_t m;
++    if (robot_link_on_packet(&c->link, buf, len, now_ms, &m) != ROBOT_RX_NEW) return;
++
++    c->seen_band = true;
++    c->last_rx_ms = now_ms;
++
++    char json[COMM_JSON_MAX];
++    if (m.type == ALBA_MSG_TELEMETRIA) {
++        c->have_vitals = true;
++        c->bpm = m.tel.bpm;
++        c->spo2 = m.tel.spo2;
++        c->bat = m.tel.bateria_pct;
++        c->vitals_ms = now_ms;
++        if (alba_telemetry_to_tb(&m.tel, epoch_ms, json, sizeof json) > 0) outbox_push(c, json, false);
++    } else if (m.type == ALBA_MSG_EVENTO) {
++        if (alba_event_to_tb(&m.evt, epoch_ms, json, sizeof json) > 0) outbox_push(c, json, true);
++        uint16_t ref = 0;
++        const robot_action_t a = robot_fall_on_event(&c->fall, &m.evt, now_ms, &ref);
++        apply_action(c, a, ref);
++    }
++}
++
++void comm_core_button_ok(comm_core_t *c, uint32_t now_ms)
++{
++    uint16_t ref = 0;
++    const robot_action_t a = robot_fall_on_button_ok(&c->fall, now_ms, &ref);
++    apply_action(c, a, ref);
++}
++
++void comm_core_tick(comm_core_t *c, uint32_t now_ms, uint32_t epoch_s, int16_t utc_offset_min)
++{
++    uint16_t ref = 0;
++    apply_action(c, robot_fall_tick(&c->fall, now_ms, &ref), ref);
++
++    if (epoch_s >= ALBA_EPOCH_MIN_S && robot_link_need_time(&c->link, now_ms)) {
++        alba_time_t h;
++        alba_pack_time(&h, c->tx_seq++, epoch_s, utc_offset_min);
++        send_to_band(c, &h, sizeof h);
++        robot_link_time_sent(&c->link, now_ms);   /* se marca aunque falle: reintenta por la rafaga/6 h */
++    }
++}
++
++void comm_core_push_env(comm_core_t *c, uint64_t epoch_ms, int16_t temp_c_x10, uint8_t hum_pct)
++{
++    char vals[64];
++    size_t n = 0;
++    vals[0] = '\0';
++    int w;
++    if (temp_c_x10 != COMM_ENV_INVALID_TEMP) {
++        const int16_t a = (int16_t)(temp_c_x10 < 0 ? -temp_c_x10 : temp_c_x10);
++        w = snprintf(vals + n, sizeof vals - n, "\"room_temp\":%s%d.%d",
++                     temp_c_x10 < 0 ? "-" : "", a / 10, a % 10);
++        if (w < 0 || (size_t)w >= sizeof vals - n) return;
++        n += (size_t)w;
++    }
++    if (hum_pct != COMM_ENV_INVALID_HUM && hum_pct <= 100u) {
++        w = snprintf(vals + n, sizeof vals - n, "%s\"room_hum\":%u", n ? "," : "", (unsigned)hum_pct);
++        if (w < 0 || (size_t)w >= sizeof vals - n) return;
++        n += (size_t)w;
++    }
++    if (n == 0u) return;
++
++    char json[COMM_JSON_MAX];
++    char ts_s[40];
++    ts_s[0] = '\0';
++    if (epoch_ms != 0u) snprintf(ts_s, sizeof ts_s, "\"ts\":%llu,", (unsigned long long)epoch_ms);
++    w = snprintf(json, sizeof json, "{%s\"values\":{%s}}", ts_s, vals);
++    if (w > 0 && (size_t)w < sizeof json) outbox_push(c, json, false);
++}
++
++bool comm_core_prompt_active(const comm_core_t *c) { return c->prompt_active; }
++
++bool comm_core_take_help_called(comm_core_t *c)
++{
++    const bool v = c->help_called;
++    c->help_called = false;
++    return v;
++}
++
++bool comm_core_band_online(const comm_core_t *c, uint32_t now_ms)
++{
++    return c->seen_band && (uint32_t)(now_ms - c->last_rx_ms) < COMM_BAND_OFFLINE_MS;
++}
+diff --git a/firmware/cogni-desk/lib/comm_core/comm_core.h b/firmware/cogni-desk/lib/comm_core/comm_core.h
+new file mode 100644
+index 0000000..395bdc7
+--- /dev/null
++++ b/firmware/cogni-desk/lib/comm_core/comm_core.h
+@@ -0,0 +1,101 @@
++/**
++ * comm_core.h
++ * Cerebro de las comunicaciones del ROBOT (cogni-desk). Une:
++ *   robot_link  (valida paquetes de la pulsera, duplicados, cuando mandar la HORA)
++ *   robot_fall  (el asistente "¿Estas bien?" y la cancelacion de caidas)
++ *   alba_thingsboard.h (JSON para ThingsBoard)
++ * y agrega una COLA DE SALIDA para la nube: si no hay WiFi/MQTT, los mensajes
++ * esperan (las alertas tienen prioridad sobre la telemetria).
++ *
++ * C puro, sin WiFi, ESP-NOW ni Arduino: se prueba en el PC (pio test -e native).
++ * CommManager.cpp es la capa delgada que lo conecta con el hardware.
++ *
++ * No es thread-safe: llamarlo siempre desde la misma tarea (el loop()). El
++ * callback de ESP-NOW NO debe llamarlo: debe copiar el paquete a una cola y
++ * dejar que el loop() lo entregue (ver CommManager.cpp).
++ */
++#ifndef COMM_CORE_H
++#define COMM_CORE_H
++
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++
++#include "robot_fall.h"
++#include "robot_link.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#define COMM_OUTBOX_CAP        16u    /* mensajes esperando para la nube        */
++#define COMM_JSON_MAX          200u   /* tamano maximo de un mensaje JSON       */
++#define COMM_BAND_OFFLINE_MS   (120u * 1000u)  /* sin paquetes en este tiempo = pulsera desconectada */
++#define COMM_ENV_INVALID_TEMP  INT16_MIN
++#define COMM_ENV_INVALID_HUM   0xFFu
++
++/** Manda bytes a la pulsera (ESP-NOW). true = aceptado por la radio. */
++typedef bool (*comm_send_fn)(const uint8_t *buf, size_t len, void *ctx);
++
++typedef struct {
++    char json[COMM_JSON_MAX];
++    bool is_event;                 /* las alertas no se descartan antes que la telemetria */
++} comm_msg_t;
++
++typedef struct {
++    robot_link_t link;
++    robot_fall_t fall;
++    comm_send_fn send;
++    void        *send_ctx;
++    uint16_t     tx_seq;           /* numero de secuencia de lo que el ROBOT envia */
++
++    comm_msg_t   outbox[COMM_OUTBOX_CAP];
++    size_t       out_count;
++    uint32_t     out_dropped;      /* mensajes descartados por cola llena */
++
++    /* lo que la interfaz (pantallas) necesita saber */
++    bool     prompt_active;        /* mostrar "¿Estas bien?" y atender el boton */
++    bool     help_called;          /* la caida se confirmo: avisar al paciente (se consume) */
++    bool     have_vitals;
++    uint8_t  bpm, spo2, bat;       /* ultimo valor recibido (invalidos = ver alba_protocol.h) */
++    uint32_t vitals_ms;            /* cuando llego el ultimo dato de la pulsera */
++    uint32_t last_rx_ms;
++    bool     seen_band;
++    uint32_t send_fail;            /* envios a la pulsera que la radio rechazo */
++} comm_core_t;
++
++void comm_core_init(comm_core_t *c, comm_send_fn send, void *send_ctx);
++
++/** Un paquete llego de la pulsera. epoch_ms = hora real en ms Unix (0 si el robot no la sabe). */
++void comm_core_on_packet(comm_core_t *c, const uint8_t *buf, size_t len,
++                         uint32_t now_ms, uint64_t epoch_ms);
++
++/** El paciente pulso "estoy bien". */
++void comm_core_button_ok(comm_core_t *c, uint32_t now_ms);
++
++/** Llamar cada ~100 ms. epoch_s = hora real en segundos Unix (0 si no se sabe); con
++ *  hora invalida NO se manda HORA a la pulsera. utc_offset_min: Ecuador = -300. */
++void comm_core_tick(comm_core_t *c, uint32_t now_ms, uint32_t epoch_s, int16_t utc_offset_min);
++
++/** Datos del propio robot (sensor del cuarto) para la nube. Valores invalidos se omiten. */
++void comm_core_push_env(comm_core_t *c, uint64_t epoch_ms, int16_t temp_c_x10, uint8_t hum_pct);
++
++/** Mensaje propio ya formateado para la nube (p. ej. "se tomo la pastilla"). Debe ser JSON de ThingsBoard. */
++bool comm_core_push_raw(comm_core_t *c, const char *json, bool is_event);
++
++/* --- cola hacia la nube: leer el mas antiguo, publicar y SOLO si se envio, quitarlo --- */
++const char *comm_core_outbox_peek(const comm_core_t *c);
++void        comm_core_outbox_pop(comm_core_t *c);
++size_t      comm_core_outbox_count(const comm_core_t *c);
++
++/* --- consultas para la interfaz --- */
++bool comm_core_prompt_active(const comm_core_t *c);
++/** true UNA vez cuando la caida se confirmo (luego se borra). */
++bool comm_core_take_help_called(comm_core_t *c);
++bool comm_core_band_online(const comm_core_t *c, uint32_t now_ms);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* COMM_CORE_H */
+diff --git a/firmware/cogni-desk/platformio.ini b/firmware/cogni-desk/platformio.ini
+index df71c04..5a50894 100644
+--- a/firmware/cogni-desk/platformio.ini
++++ b/firmware/cogni-desk/platformio.ini
+@@ -24,6 +24,7 @@ monitor_speed = 115200
+ lib_deps =
+     adafruit/Adafruit SSD1306 @ ^2.5.13
+     adafruit/Adafruit GFX Library @ ^1.11.9
++    knolleary/PubSubClient @ ^2.8
+ ; Carpeta compartida con la pulsera: aqui vive alba_protocol.h, el formato de
+ ; los mensajes que el robot recibe por ESP-NOW. Se usa con #include "alba_protocol.h".
+ build_flags = -I../common
+diff --git a/firmware/cogni-desk/src/CommManager.cpp b/firmware/cogni-desk/src/CommManager.cpp
+index e69de29..a59337c 100644
+--- a/firmware/cogni-desk/src/CommManager.cpp
++++ b/firmware/cogni-desk/src/CommManager.cpp
+@@ -0,0 +1,208 @@
++#include "CommManager.h"
++
++#include <Arduino.h>
++#include <WiFi.h>
++#include <WiFiClientSecure.h>
++#include <PubSubClient.h>
++#include <esp_now.h>
++#include <esp_idf_version.h>
++#include "freertos/FreeRTOS.h"
++#include "freertos/queue.h"
++#include <sys/time.h>
++#include <time.h>
++
++#include "alba_thingsboard.h"
++#include "comm_core.h"
++
++#if __has_include("comm_secrets.h")
++#include "comm_secrets.h"
++#else
++// Sin credenciales el robot compila igual (para no romper el trabajo de los demas), pero
++// no se conecta a WiFi ni a la nube. Copia include/comm_secrets.example.h a include/comm_secrets.h.
++#warning "Falta include/comm_secrets.h: sin WiFi ni nube hasta que lo crees (ver comm_secrets.example.h)."
++#define COMM_WIFI_SSID  ""
++#define COMM_WIFI_PASS  ""
++#define COMM_TB_HOST    "localhost"
++#define COMM_TB_PORT    8883
++#define COMM_TB_TOKEN   ""
++#endif
++
++#ifndef COMM_UTC_OFFSET_MIN
++#define COMM_UTC_OFFSET_MIN (-300)
++#endif
++
++namespace {
++
++constexpr uint32_t TICK_MS            = 100;
++constexpr uint32_t WIFI_RETRY_MS      = 10000;
++constexpr uint32_t MQTT_RETRY_MS      = 30000;   // cada intento puede bloquear unos segundos
++constexpr uint32_t ENV_PERIOD_MS      = 60000;
++constexpr uint8_t  MAX_PUBLISH_PER_CALL = 4;
++constexpr size_t   RX_MAX             = 64;      // los paquetes de la pulsera miden ~12 bytes
++constexpr uint8_t  RX_QUEUE_LEN       = 8;
++
++struct RxPacket {
++    uint8_t len;
++    uint8_t data[RX_MAX];
++};
++
++comm_core_t        core;
++QueueHandle_t      rxQueue = nullptr;
++WiFiClientSecure   tlsClient;
++PubSubClient       mqtt(tlsClient);
++bool               started = false;
++uint32_t           lastTick = 0, lastWifiTry = 0, lastMqttTry = 0, lastEnv = 0;
++bool               haveEnvSent = false;
++
++const uint8_t BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
++
++// ---- hora real (NTP) --------------------------------------------------------
++uint32_t epochSeconds() {
++    const time_t t = time(nullptr);
++    return (t >= (time_t)ALBA_EPOCH_MIN_S) ? (uint32_t)t : 0u;   // 0 = aun no hay hora real
++}
++
++uint64_t epochMillis() {
++    if (epochSeconds() == 0u) return 0u;
++    struct timeval tv;
++    gettimeofday(&tv, nullptr);
++    return (uint64_t)tv.tv_sec * 1000ULL + (uint64_t)(tv.tv_usec / 1000);
++}
++
++// ---- ESP-NOW ----------------------------------------------------------------
++bool sendToBand(const uint8_t *buf, size_t len, void *) {
++    return esp_now_send(BROADCAST, buf, len) == ESP_OK;
++}
++
++// El callback corre en la tarea de WiFi: SOLO copia a la cola. Lo demas lo hace loop().
++void enqueuePacket(const uint8_t *data, int len) {
++    if (rxQueue == nullptr || data == nullptr || len <= 0 || (size_t)len > RX_MAX) return;
++    RxPacket p;
++    p.len = (uint8_t)len;
++    memcpy(p.data, data, (size_t)len);
++    xQueueSend(rxQueue, &p, 0);          // cola llena = se descarta (la pulsera reenvia lo critico)
++}
++
++#if ESP_IDF_VERSION_MAJOR >= 5
++void onEspNowRecv(const esp_now_recv_info_t *, const uint8_t *data, int len) { enqueuePacket(data, len); }
++#else
++void onEspNowRecv(const uint8_t *, const uint8_t *data, int len) { enqueuePacket(data, len); }
++#endif
++
++bool startEspNow() {
++    if (esp_now_init() != ESP_OK) return false;
++    esp_now_peer_info_t peer = {};
++    memcpy(peer.peer_addr, BROADCAST, 6);
++    peer.channel = 0;                    // 0 = el canal actual del WiFi (debe ser el mismo que usa la pulsera)
++    peer.encrypt = false;
++    if (esp_now_add_peer(&peer) != ESP_OK) return false;
++    return esp_now_register_recv_cb(onEspNowRecv) == ESP_OK;
++}
++
++// ---- WiFi / MQTT ------------------------------------------------------------
++void ensureWifi(uint32_t now) {
++    if (WiFi.status() == WL_CONNECTED) return;
++    if (lastWifiTry != 0 && now - lastWifiTry < WIFI_RETRY_MS) return;
++    lastWifiTry = now ? now : 1;
++    WiFi.begin(COMM_WIFI_SSID, COMM_WIFI_PASS);   // no bloquea: el estado se revisa en la siguiente vuelta
++}
++
++void ensureMqtt(uint32_t now) {
++    if (mqtt.connected() || WiFi.status() != WL_CONNECTED) return;
++    if (lastMqttTry != 0 && now - lastMqttTry < MQTT_RETRY_MS) return;
++    lastMqttTry = now ? now : 1;
++    if (!mqtt.connect("alba-robot", COMM_TB_TOKEN, nullptr)) {   // usuario = token del dispositivo
++        Serial.printf("[comm] MQTT no conecto (estado %d)\n", mqtt.state());
++    } else {
++        Serial.println("[comm] MQTT conectado a ThingsBoard");
++    }
++}
++
++}  // namespace
++
++// =============================================================================
++
++void initCommunication() {
++    comm_core_init(&core, sendToBand, nullptr);
++    rxQueue = xQueueCreate(RX_QUEUE_LEN, sizeof(RxPacket));
++
++    WiFi.mode(WIFI_STA);
++    WiFi.begin(COMM_WIFI_SSID, COMM_WIFI_PASS);
++    lastWifiTry = millis() ? millis() : 1;
++
++    if (!startEspNow()) Serial.println("[comm] ERROR: no se pudo iniciar ESP-NOW");
++    configTime(0, 0, "pool.ntp.org", "time.google.com");   // hora UTC; el desfase local va en el mensaje HORA
++
++#ifdef COMM_TB_CA_CERT
++    tlsClient.setCACert(COMM_TB_CA_CERT);
++#else
++    tlsClient.setInsecure();   // SOLO PRUEBAS: cifra, pero no verifica quien es el servidor
++    Serial.println("[comm] AVISO: TLS sin verificar el certificado del servidor (define COMM_TB_CA_CERT)");
++#endif
++    tlsClient.setTimeout(5);   // segundos
++    mqtt.setServer(COMM_TB_HOST, COMM_TB_PORT);
++    mqtt.setBufferSize(384);
++    mqtt.setSocketTimeout(5);
++    started = true;
++}
++
++void procesarComunicacionesBackground() {
++    if (!started) return;
++    const uint32_t now = millis();
++
++    RxPacket p;
++    while (xQueueReceive(rxQueue, &p, 0) == pdTRUE) {
++        comm_core_on_packet(&core, p.data, p.len, now, epochMillis());
++    }
++
++    if (now - lastTick >= TICK_MS) {
++        lastTick = now;
++        comm_core_tick(&core, now, epochSeconds(), (int16_t)COMM_UTC_OFFSET_MIN);
++    }
++}
++
++void sincronizarDatosDashboardBackground() {
++    if (!started) return;
++    const uint32_t now = millis();
++    ensureWifi(now);
++    ensureMqtt(now);
++    if (!mqtt.connected()) return;
++
++    mqtt.loop();
++    for (uint8_t i = 0; i < MAX_PUBLISH_PER_CALL; i++) {
++        const char *json = comm_core_outbox_peek(&core);
++        if (json == nullptr) break;
++        if (!mqtt.publish(ALBA_TB_TOPIC, json)) break;   // no se quita de la cola: se reintenta
++        comm_core_outbox_pop(&core);
++    }
++}
++
++void commBotonEstoyBien() {
++    if (started) comm_core_button_ok(&core, millis());
++}
++bool commPromptCaidaActivo() { return started && comm_core_prompt_active(&core); }
++bool commTomarAyudaAvisada() { return started && comm_core_take_help_called(&core); }
++
++bool    commHayDatosPulsera() { return started && core.have_vitals; }
++uint8_t commBpm()             { return core.bpm; }
++uint8_t commSpo2()            { return core.spo2; }
++uint8_t commBateria()         { return core.bat; }
++bool    commPulseraOnline()   { return started && comm_core_band_online(&core, millis()); }
++
++void commPublicarAmbiente(int16_t temp_c_x10, uint8_t hum_pct) {
++    if (!started) return;
++    const uint32_t now = millis();
++    if (haveEnvSent && now - lastEnv < ENV_PERIOD_MS) return;
++    lastEnv = now;
++    haveEnvSent = true;
++    comm_core_push_env(&core, epochMillis(), temp_c_x10, hum_pct);
++}
++
++void registrarTomaEnDashboard() {
++    if (!started) return;
++    char json[COMM_JSON_MAX];
++    const uint64_t ms = epochMillis();
++    if (ms != 0u) snprintf(json, sizeof json, "{\"ts\":%llu,\"values\":{\"med_taken\":true}}", (unsigned long long)ms);
++    else          snprintf(json, sizeof json, "{\"values\":{\"med_taken\":true}}");
++    comm_core_push_raw(&core, json, true);
++}
+diff --git a/firmware/cogni-desk/test/test_comm_core/test_main.cpp b/firmware/cogni-desk/test/test_comm_core/test_main.cpp
+new file mode 100644
+index 0000000..9a3e000
+--- /dev/null
++++ b/firmware/cogni-desk/test/test_comm_core/test_main.cpp
+@@ -0,0 +1,236 @@
++// Pruebas del cerebro de comunicaciones del robot (comm_core).
++// Correr con:  pio test -e native -f test_comm_core
++#include <unity.h>
++#include <string.h>
++#include <stdio.h>
++
++#include "comm_core.h"
++
++static comm_core_t c;
++static uint8_t sent[8][32];
++static size_t  sent_len[8];
++static int     sent_n;
++static bool    radio_ok;
++
++static bool fake_send(const uint8_t *buf, size_t len, void *ctx)
++{
++    (void)ctx;
++    if (!radio_ok) return false;
++    if (sent_n < 8 && len <= 32) { memcpy(sent[sent_n], buf, len); sent_len[sent_n] = len; sent_n++; }
++    return true;
++}
++
++void setUp(void) { sent_n = 0; radio_ok = true; comm_core_init(&c, fake_send, NULL); }
++void tearDown(void) {}
++
++static const uint64_t EPOCH_MS = 1793016003000ULL;
++static const uint32_t EPOCH_S  = 1793016003u;
++
++static void rx_tel(uint16_t seq, uint32_t t, uint8_t bpm, uint8_t spo2, uint8_t bat, uint32_t now)
++{
++    alba_telemetry_t p; memset(&p, 0, sizeof p);
++    alba_pack_telemetry(&p, seq, t, bpm, spo2, bat);
++    comm_core_on_packet(&c, (const uint8_t *)&p, sizeof p, now, EPOCH_MS);
++}
++static void rx_evt(uint16_t seq, uint32_t t, uint8_t alerta, uint16_t v, uint8_t conf, uint32_t now)
++{
++    alba_event_t p; memset(&p, 0, sizeof p);
++    alba_pack_event(&p, seq, t, alerta, v, conf);
++    comm_core_on_packet(&c, (const uint8_t *)&p, sizeof p, now, EPOCH_MS);
++}
++
++void test_telemetry_goes_to_outbox_in_thingsboard_format(void)
++{
++    rx_tel(1, 1000, 62, 97, 84, 5000);
++    TEST_ASSERT_EQUAL_UINT(1, comm_core_outbox_count(&c));
++    TEST_ASSERT_EQUAL_STRING("{\"ts\":1793016003000,\"values\":{\"bpm\":62,\"spo2\":97,\"bat\":84}}",
++                             comm_core_outbox_peek(&c));
++}
++
++void test_telemetry_updates_ui_values(void)
++{
++    rx_tel(1, 1000, 70, 95, 50, 5000);
++    TEST_ASSERT_TRUE(c.have_vitals);
++    TEST_ASSERT_EQUAL_UINT8(70, c.bpm);
++    TEST_ASSERT_EQUAL_UINT8(95, c.spo2);
++    TEST_ASSERT_EQUAL_UINT8(50, c.bat);
++}
++
++void test_duplicate_packet_is_not_published_twice(void)
++{
++    rx_tel(1, 1000, 62, 97, 84, 5000);
++    rx_tel(1, 1000, 62, 97, 84, 5010);
++    TEST_ASSERT_EQUAL_UINT(1, comm_core_outbox_count(&c));
++}
++
++void test_garbage_packet_is_ignored(void)
++{
++    const uint8_t junk[5] = {9, 9, 9, 9, 9};
++    comm_core_on_packet(&c, junk, sizeof junk, 1000, EPOCH_MS);
++    TEST_ASSERT_EQUAL_UINT(0, comm_core_outbox_count(&c));
++    TEST_ASSERT_FALSE(c.seen_band);
++}
++
++void test_pending_fall_shows_prompt_and_publishes(void)
++{
++    rx_evt(5, 2000, ALBA_ALERTA_CAIDA_DETECTADA, 4000, ALBA_CONF_PENDIENTE, 10000);
++    TEST_ASSERT_TRUE(comm_core_prompt_active(&c));
++    TEST_ASSERT_EQUAL_UINT(1, comm_core_outbox_count(&c));
++    TEST_ASSERT_NOT_NULL(strstr(comm_core_outbox_peek(&c), "\"confirm\":\"PENDIENTE\""));
++}
++
++void test_button_sends_cancel_with_fall_seq(void)
++{
++    rx_evt(5, 2000, ALBA_ALERTA_CAIDA_DETECTADA, 4000, ALBA_CONF_PENDIENTE, 10000);
++    comm_core_button_ok(&c, 12000);
++    TEST_ASSERT_EQUAL_INT(1, sent_n);
++    TEST_ASSERT_EQUAL_UINT(sizeof(alba_cancel_t), sent_len[0]);
++    alba_cancel_t m; memcpy(&m, sent[0], sizeof m);
++    TEST_ASSERT_EQUAL_UINT8(ALBA_MSG_CANCELAR, m.hdr.type);
++    TEST_ASSERT_EQUAL_UINT16(5, m.ref_seq);
++    TEST_ASSERT_FALSE(comm_core_prompt_active(&c));
++}
++
++void test_cancel_is_repeated_by_tick(void)
++{
++    rx_evt(5, 2000, ALBA_ALERTA_CAIDA_DETECTADA, 4000, ALBA_CONF_PENDIENTE, 10000);
++    comm_core_button_ok(&c, 12000);
++    for (uint32_t t = 12100; t < 14000; t += 100) comm_core_tick(&c, t, 0, -300);
++    TEST_ASSERT_EQUAL_INT(1 + (int)ROBOT_CANCEL_REPEATS, sent_n);
++}
++
++void test_button_without_fall_sends_nothing(void)
++{
++    comm_core_button_ok(&c, 1000);
++    TEST_ASSERT_EQUAL_INT(0, sent_n);
++}
++
++void test_confirmed_fall_sets_help_called_once(void)
++{
++    rx_evt(5, 2000, ALBA_ALERTA_CAIDA_DETECTADA, 4000, ALBA_CONF_PENDIENTE, 10000);
++    rx_evt(6, 22000, ALBA_ALERTA_CAIDA_DETECTADA, 4000, ALBA_CONF_CONFIRMADA, 30000);
++    TEST_ASSERT_TRUE(comm_core_take_help_called(&c));
++    TEST_ASSERT_FALSE(comm_core_take_help_called(&c));
++    TEST_ASSERT_FALSE(comm_core_prompt_active(&c));
++}
++
++void test_time_is_sent_only_with_real_clock(void)
++{
++    comm_core_tick(&c, 1000, 0, -300);                 /* sin hora real */
++    TEST_ASSERT_EQUAL_INT(0, sent_n);
++    rx_tel(1, 1000, 62, 97, 84, 1000);                 /* aparece la pulsera */
++    comm_core_tick(&c, 1100, EPOCH_S, -300);
++    TEST_ASSERT_EQUAL_INT(1, sent_n);
++    alba_time_t h; memcpy(&h, sent[0], sizeof h);
++    TEST_ASSERT_EQUAL_UINT8(ALBA_MSG_HORA, h.hdr.type);
++    TEST_ASSERT_EQUAL_UINT32(EPOCH_S, h.epoch_s);
++    TEST_ASSERT_EQUAL_INT16(-300, h.utc_offset_min);
++}
++
++void test_time_failed_send_is_counted(void)
++{
++    rx_tel(1, 1000, 62, 97, 84, 1000);
++    radio_ok = false;
++    comm_core_tick(&c, 1100, EPOCH_S, -300);
++    TEST_ASSERT_EQUAL_UINT32(1, c.send_fail);
++}
++
++void test_outbox_is_fifo_and_pop_removes_oldest(void)
++{
++    rx_tel(1, 1000, 60, 97, 80, 1000);
++    rx_tel(2, 2000, 61, 97, 80, 2000);
++    TEST_ASSERT_NOT_NULL(strstr(comm_core_outbox_peek(&c), "\"bpm\":60"));
++    comm_core_outbox_pop(&c);
++    TEST_ASSERT_NOT_NULL(strstr(comm_core_outbox_peek(&c), "\"bpm\":61"));
++    comm_core_outbox_pop(&c);
++    TEST_ASSERT_NULL(comm_core_outbox_peek(&c));
++    comm_core_outbox_pop(&c);                          /* vacia: no rompe */
++    TEST_ASSERT_EQUAL_UINT(0, comm_core_outbox_count(&c));
++}
++
++void test_full_outbox_drops_telemetry_before_alerts(void)
++{
++    rx_evt(1, 1000, ALBA_ALERTA_BATERIA_BAJA, 15, ALBA_CONF_CONFIRMADA, 1000);   /* alerta al frente */
++    for (uint16_t i = 0; i < COMM_OUTBOX_CAP + 4u; i++)
++        rx_tel((uint16_t)(2 + i), 2000 + i, 60, 97, 80, 2000 + i);
++    TEST_ASSERT_EQUAL_UINT(COMM_OUTBOX_CAP, comm_core_outbox_count(&c));
++    TEST_ASSERT_NOT_NULL(strstr(comm_core_outbox_peek(&c), "BATERIA_BAJA"));     /* la alerta sobrevive */
++    TEST_ASSERT_EQUAL_UINT32(5, c.out_dropped);   /* 1 alerta + 20 telemetrias = 21 en una cola de 16 */
++}
++
++void test_full_outbox_of_alerts_drops_the_oldest_alert(void)
++{
++    for (uint16_t i = 0; i < COMM_OUTBOX_CAP + 1u; i++)
++        rx_evt((uint16_t)(1 + i), 1000u + i, ALBA_ALERTA_BATERIA_BAJA, (uint16_t)(10 + i), ALBA_CONF_CONFIRMADA, 1000u + i);
++    TEST_ASSERT_EQUAL_UINT(COMM_OUTBOX_CAP, comm_core_outbox_count(&c));
++    TEST_ASSERT_NOT_NULL(strstr(comm_core_outbox_peek(&c), "\"value\":11"));      /* se fue la del 10 */
++}
++
++void test_env_formats_temperature_and_humidity(void)
++{
++    comm_core_push_env(&c, EPOCH_MS, 235, 61);
++    TEST_ASSERT_EQUAL_STRING("{\"ts\":1793016003000,\"values\":{\"room_temp\":23.5,\"room_hum\":61}}",
++                             comm_core_outbox_peek(&c));
++}
++
++void test_env_negative_and_partial_values(void)
++{
++    comm_core_push_env(&c, 0, -25, COMM_ENV_INVALID_HUM);
++    TEST_ASSERT_EQUAL_STRING("{\"values\":{\"room_temp\":-2.5}}", comm_core_outbox_peek(&c));
++    comm_core_outbox_pop(&c);
++    comm_core_push_env(&c, 0, COMM_ENV_INVALID_TEMP, 40);
++    TEST_ASSERT_EQUAL_STRING("{\"values\":{\"room_hum\":40}}", comm_core_outbox_peek(&c));
++}
++
++void test_env_with_nothing_valid_is_not_queued(void)
++{
++    comm_core_push_env(&c, EPOCH_MS, COMM_ENV_INVALID_TEMP, COMM_ENV_INVALID_HUM);
++    comm_core_push_env(&c, EPOCH_MS, 200, 101);        /* humedad fuera de rango: solo temperatura */
++    TEST_ASSERT_EQUAL_UINT(1, comm_core_outbox_count(&c));
++    TEST_ASSERT_NULL(strstr(comm_core_outbox_peek(&c), "room_hum"));
++}
++
++void test_band_online_and_offline(void)
++{
++    TEST_ASSERT_FALSE(comm_core_band_online(&c, 1000));
++    rx_tel(1, 1000, 62, 97, 84, 5000);
++    TEST_ASSERT_TRUE(comm_core_band_online(&c, 5000 + COMM_BAND_OFFLINE_MS - 1));
++    TEST_ASSERT_FALSE(comm_core_band_online(&c, 5000 + COMM_BAND_OFFLINE_MS));
++}
++
++void test_push_raw_accepts_json_and_rejects_bad_input(void)
++{
++    TEST_ASSERT_TRUE(comm_core_push_raw(&c, "{\"values\":{\"med_taken\":true}}", true));
++    TEST_ASSERT_EQUAL_STRING("{\"values\":{\"med_taken\":true}}", comm_core_outbox_peek(&c));
++    TEST_ASSERT_FALSE(comm_core_push_raw(&c, NULL, true));
++    TEST_ASSERT_FALSE(comm_core_push_raw(&c, "no es json", true));
++    char big[COMM_JSON_MAX + 10];
++    memset(big, 'a', sizeof big); big[0] = '{'; big[sizeof big - 1] = '\0';
++    TEST_ASSERT_FALSE(comm_core_push_raw(&c, big, true));
++    TEST_ASSERT_EQUAL_UINT(1, comm_core_outbox_count(&c));
++}
++
++int main(void)
++{
++    UNITY_BEGIN();
++    RUN_TEST(test_telemetry_goes_to_outbox_in_thingsboard_format);
++    RUN_TEST(test_telemetry_updates_ui_values);
++    RUN_TEST(test_duplicate_packet_is_not_published_twice);
++    RUN_TEST(test_garbage_packet_is_ignored);
++    RUN_TEST(test_pending_fall_shows_prompt_and_publishes);
++    RUN_TEST(test_button_sends_cancel_with_fall_seq);
++    RUN_TEST(test_cancel_is_repeated_by_tick);
++    RUN_TEST(test_button_without_fall_sends_nothing);
++    RUN_TEST(test_confirmed_fall_sets_help_called_once);
++    RUN_TEST(test_time_is_sent_only_with_real_clock);
++    RUN_TEST(test_time_failed_send_is_counted);
++    RUN_TEST(test_outbox_is_fifo_and_pop_removes_oldest);
++    RUN_TEST(test_full_outbox_drops_telemetry_before_alerts);
++    RUN_TEST(test_full_outbox_of_alerts_drops_the_oldest_alert);
++    RUN_TEST(test_env_formats_temperature_and_humidity);
++    RUN_TEST(test_env_negative_and_partial_values);
++    RUN_TEST(test_env_with_nothing_valid_is_not_queued);
++    RUN_TEST(test_band_online_and_offline);
++    RUN_TEST(test_push_raw_accepts_json_and_rejects_bad_input);
++    return UNITY_END();
++}
