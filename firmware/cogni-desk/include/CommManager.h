@@ -42,6 +42,12 @@ uint8_t commSpo2();         // 0xFF = sin medicion valida
 uint8_t commBateria();      // 0xFF = la pulsera no mide su bateria
 bool    commPulseraOnline();
 
+// Estado de la nube (para depurar y para la interfaz)
+bool     commWifiConectado();
+bool     commNubeConectada();
+uint32_t commMensajesPublicados();   // cuantos JSON se han enviado a ThingsBoard
+uint32_t commMensajesEnCola();       // cuantos esperan (sin WiFi/MQTT o con el servidor caido)
+
 /** Temperatura (decimas de grado: 235 = 23.5 C) y humedad (%). Se envia como mucho una vez por minuto.
  *  Usar INT16_MIN / 0xFF si el sensor no tiene lectura. */
 void commPublicarAmbiente(int16_t temp_c_x10, uint8_t hum_pct);

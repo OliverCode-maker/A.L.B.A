@@ -64,6 +64,8 @@ PubSubClient       mqtt(tlsClient);
 bool               started = false;
 uint32_t           lastTick = 0, lastWifiTry = 0, lastMqttTry = 0, lastEnv = 0;
 bool               haveEnvSent = false;
+bool               wifiWasUp = false, mqttWasUp = false;
+uint32_t           publishedCount = 0;
 
 const uint8_t BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
@@ -129,7 +131,15 @@ bool startEspNow() {
 // ---- WiFi / MQTT ------------------------------------------------------------
 void ensureWifi(uint32_t now) {
     if (COMM_WIFI_DISABLED) return;
-    if (WiFi.status() == WL_CONNECTED) return;
+    const bool up = WiFi.status() == WL_CONNECTED;
+    if (up && !wifiWasUp) {
+        Serial.printf("[comm] WiFi conectado | canal %d | IP %s\n", (int)WiFi.channel(), WiFi.localIP().toString().c_str());
+        Serial.println("[comm] ATENCION: la pulsera debe usar este mismo canal (BAND_ESPNOW_CHANNEL)");
+    } else if (!up && wifiWasUp) {
+        Serial.println("[comm] WiFi desconectado");
+    }
+    wifiWasUp = up;
+    if (up) return;
     if (lastWifiTry != 0 && now - lastWifiTry < WIFI_RETRY_MS) return;
     lastWifiTry = now ? now : 1;
     WiFi.begin(COMM_WIFI_SSID, COMM_WIFI_PASS);   // no bloquea: el estado se revisa en la siguiente vuelta
@@ -137,7 +147,10 @@ void ensureWifi(uint32_t now) {
 
 void ensureMqtt(uint32_t now) {
     if (COMM_WIFI_DISABLED) return;
-    if (mqtt.connected() || WiFi.status() != WL_CONNECTED) return;
+    const bool mq = mqtt.connected();
+    if (mqttWasUp && !mq) Serial.println("[comm] MQTT desconectado");
+    mqttWasUp = mq;
+    if (mq || WiFi.status() != WL_CONNECTED) return;
     if (lastMqttTry != 0 && now - lastMqttTry < MQTT_RETRY_MS) return;
     lastMqttTry = now ? now : 1;
     if (!mqtt.connect("alba-robot", COMM_TB_TOKEN, nullptr)) {   // usuario = token del dispositivo
@@ -213,10 +226,20 @@ void sincronizarDatosDashboardBackground() {
     for (uint8_t i = 0; i < MAX_PUBLISH_PER_CALL; i++) {
         const char *json = comm_core_outbox_peek(&core);
         if (json == nullptr) break;
-        if (!mqtt.publish(ALBA_TB_TOPIC, json)) break;   // no se quita de la cola: se reintenta
+        if (!mqtt.publish(ALBA_TB_TOPIC, json)) {        // no se quita de la cola: se reintenta
+            Serial.println("[comm] publicacion rechazada; se reintenta");
+            break;
+        }
+        publishedCount++;
+        Serial.printf("[comm] -> nube: %s\n", json);
         comm_core_outbox_pop(&core);
     }
 }
+
+bool     commWifiConectado()       { return started && WiFi.status() == WL_CONNECTED; }
+bool     commNubeConectada()       { return started && mqtt.connected(); }
+uint32_t commMensajesPublicados()  { return publishedCount; }
+uint32_t commMensajesEnCola()      { return started ? (uint32_t)comm_core_outbox_count(&core) : 0u; }
 
 void commBotonEstoyBien() {
     if (started) comm_core_button_ok(&core, millis());

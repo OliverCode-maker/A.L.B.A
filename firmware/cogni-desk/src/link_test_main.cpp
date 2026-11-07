@@ -43,8 +43,10 @@ void loop() {
 
     if (millis() - lastReport >= 5000) {
         lastReport = millis();
-        Serial.printf("[test] pulsera %s | bpm=%u spo2=%u bat=%u\n",
+        Serial.printf("[test] pulsera %s | bpm=%u spo2=%u bat=%u | WiFi %s | nube %s | publicados=%lu en cola=%lu\n",
                       commPulseraOnline() ? "EN LINEA" : "sin senal",
-                      (unsigned)commBpm(), (unsigned)commSpo2(), (unsigned)commBateria());
+                      (unsigned)commBpm(), (unsigned)commSpo2(), (unsigned)commBateria(),
+                      commWifiConectado() ? "si" : "no", commNubeConectada() ? "si" : "no",
+                      (unsigned long)commMensajesPublicados(), (unsigned long)commMensajesEnCola());
     }
 }
