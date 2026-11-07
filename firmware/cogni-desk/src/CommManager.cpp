@@ -34,6 +34,10 @@
 #ifndef COMM_WIFI_DISABLED
 #define COMM_WIFI_DISABLED 0
 #endif
+// COMM_DIAG=1: cada 10 s publica contadores del enlace (rb_*) a la nube. Util sin monitor serie.
+#ifndef COMM_DIAG
+#define COMM_DIAG 0
+#endif
 #ifndef COMM_ESPNOW_CHANNEL
 #define COMM_ESPNOW_CHANNEL 0       // 0 = no tocar el canal (usa el del router)
 #endif
@@ -51,6 +55,7 @@ constexpr uint32_t ENV_PERIOD_MS      = 60000;
 constexpr uint8_t  MAX_PUBLISH_PER_CALL = 4;
 constexpr size_t   RX_MAX             = 64;      // los paquetes de la pulsera miden ~12 bytes
 constexpr uint8_t  RX_QUEUE_LEN       = 8;
+constexpr uint32_t DIAG_PERIOD_MS     = 10000;   // diagnostico hacia la nube (solo si COMM_DIAG=1)
 
 struct RxPacket {
     uint8_t len;
@@ -65,6 +70,8 @@ bool               started = false;
 uint32_t           lastTick = 0, lastWifiTry = 0, lastMqttTry = 0, lastEnv = 0;
 bool               haveEnvSent = false;
 bool               wifiWasUp = false, mqttWasUp = false;
+uint32_t           lastDiag = 0;
+uint32_t           rxQueueDrops = 0;
 uint32_t           publishedCount = 0;
 
 const uint8_t BROADCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -109,7 +116,7 @@ void enqueuePacket(const uint8_t *data, int len) {
     RxPacket p;
     p.len = (uint8_t)len;
     memcpy(p.data, data, (size_t)len);
-    xQueueSend(rxQueue, &p, 0);          // cola llena = se descarta (la pulsera reenvia lo critico)
+    if (xQueueSend(rxQueue, &p, 0) != pdTRUE) rxQueueDrops++;   // cola llena = se descarta (la pulsera reenvia lo critico)
 }
 
 #if ESP_IDF_VERSION_MAJOR >= 5
@@ -208,6 +215,27 @@ void procesarComunicacionesBackground() {
         }
         comm_core_on_packet(&core, p.data, p.len, now, epochMillis());
     }
+
+#if COMM_DIAG
+    // Diagnostico para cuando no hay monitor serie (placas con bateria): se ve en "Latest telemetry".
+    if (now - lastDiag >= DIAG_PERIOD_MS) {
+        lastDiag = now;
+        char d[COMM_JSON_MAX];
+        const uint64_t ms = epochMillis();
+        char ts_s[40];
+        ts_s[0] = '\0';
+        if (ms != 0u) snprintf(ts_s, sizeof ts_s, "\"ts\":%llu,", (unsigned long long)ms);
+        snprintf(d, sizeof d,
+                 "{%s\"values\":{\"rb_up_s\":%lu,\"rb_wifi_ch\":%d,\"rb_rx\":%lu,\"rb_rx_bad\":%lu,\"rb_dup\":%lu,"
+                 "\"rb_lost\":%lu,\"rb_band_reboots\":%lu,\"rb_tx_fail\":%lu,\"rb_q_drop\":%lu,\"rb_band_on\":%d}}",
+                 ts_s, (unsigned long)(now / 1000u), (int)WiFi.channel(),
+                 (unsigned long)core.link.rx_new, (unsigned long)core.link.rx_invalid, (unsigned long)core.link.rx_duplicate,
+                 (unsigned long)core.link.rx_lost, (unsigned long)core.link.band_reboots,
+                 (unsigned long)core.send_fail, (unsigned long)rxQueueDrops,
+                 comm_core_band_online(&core, now) ? 1 : 0);
+        comm_core_push_raw(&core, d, false);
+    }
+#endif
 
     if (now - lastTick >= TICK_MS) {
         lastTick = now;

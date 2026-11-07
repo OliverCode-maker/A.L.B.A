@@ -45,3 +45,27 @@ pulsera al panel del cuidador. Hace falta que la prueba de enlace ya funcione.
   dejarlo corriendo horas.
 - Sin certificado de la CA, el TLS cifra pero no verifica el servidor (solo pruebas).
 - **Esto solo se reviso de sintaxis**: no se ha compilado con el SDK real ni probado en placas.
+
+## Sin monitor serie (placas con bateria): diagnostico en la nube
+Con `linktest-nube` el robot publica cada 10 s unos contadores al mismo dispositivo ("Latest telemetry"). Sirven para
+saber QUE falla aunque no haya cable:
+
+| Clave | Significa |
+|---|---|
+| `rb_up_s` | segundos desde que arranco el robot (si no cambia, el robot esta apagado o sin MQTT) |
+| `rb_wifi_ch` | canal del WiFi del robot. **La pulsera debe usar este mismo canal** |
+| `rb_rx` | paquetes validos recibidos de la pulsera. **0 = no se oyen (canal distinto o lejos)** |
+| `rb_rx_bad` | paquetes recibidos pero invalidos |
+| `rb_dup` / `rb_lost` | repetidos / perdidos (huecos en la secuencia) |
+| `rb_band_reboots` | veces que se detecto que la pulsera se reinicio |
+| `rb_tx_fail` | envios del robot a la pulsera que la radio rechazo |
+| `rb_q_drop` | paquetes descartados porque el robot estaba ocupado |
+| `rb_band_on` | 1 = se oye a la pulsera en los ultimos 2 minutos |
+
+Lectura rapida:
+- No aparece **nada** en ThingsBoard -> el robot no tiene WiFi o MQTT (credenciales, red 2.4 GHz, token).
+- Aparecen `rb_*` pero `rb_rx = 0` -> el robot esta en la nube pero no oye a la pulsera: **canal** o distancia.
+- `rb_rx` sube y aparecen `bpm`, `spo2`, `bat` -> todo el camino funciona.
+- Para ver que el robot tambien le habla a la pulsera: en la caida 1 pulsa BOOT del robot; si aparece en el registro de
+  eventos la fila `CANCELADA`, la pulsera recibio el CANCELAR y respondio (viaja pulsera -> robot -> nube).
+- Para cargar las placas hace falta USB una vez; despues se pueden desconectar y dejar con bateria.
