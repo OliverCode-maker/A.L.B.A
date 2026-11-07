@@ -176,6 +176,9 @@ void initCommunication() {
     rxQueue = xQueueCreate(RX_QUEUE_LEN, sizeof(RxPacket));
 
     WiFi.mode(WIFI_STA);
+    // Sin ahorro de energia del WiFi: con "modem sleep" (por defecto) la radio duerme entre
+    // balizas del router y pierde paquetes ESP-NOW. El robot va enchufado, no importa el consumo.
+    WiFi.setSleep(false);
 #if !COMM_WIFI_DISABLED
     WiFi.begin(COMM_WIFI_SSID, COMM_WIFI_PASS);
     lastWifiTry = millis() ? millis() : 1;
