@@ -1,0 +1,1 @@
+#ifndef SENSOR_MANAGER_H

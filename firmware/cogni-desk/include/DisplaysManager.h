@@ -16,9 +16,9 @@ extern Adafruit_SSD1306 oledDerecho;
 
 // Prototipo de la función de configuración inicial
 void initDisplays();
-void initButtons();
 void mostrarSplashScreenALBA();
 void mostrarOjosALBA();
 void mostrarOjosCerradosALBA();
 void mostrarMenuIconos(int opcionSeleccionada);
+void mostrarAlertaMedicamentosUI();
 #endif
