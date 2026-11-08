@@ -8,6 +8,7 @@
 #include "band_port.h"
 #include "band_pins.h"
 #include "band_tasks.h"
+#include "port_battery.h"
 #include "port_i2c.h"
 #include "port_wifi_debug.h"
 
@@ -109,6 +110,15 @@ static bool espnow_start(void)
 
 void port_start(void)
 {
+    const esp_err_t battery_err = port_battery_init();
+    if (battery_err == ESP_OK) {
+        port_log("[bateria] ADC listo en GPIO%d; divisor %u:1",
+                 BAND_PIN_BAT_ADC, BAND_BAT_DIVIDER);
+    } else {
+        port_log("[bateria] no se pudo inicializar el ADC: %s",
+                 esp_err_to_name(battery_err));
+    }
+
     const esp_err_t err = port_i2c_init();
     if (err == ESP_OK) {
         port_log("[i2c] bus listo; conecta MPU6050 y MAX30102 en SDA=GPIO%d, SCL=GPIO%d",
@@ -122,7 +132,6 @@ void port_start(void)
 #else
     (void)espnow_start();
 #endif
-    port_log("[bateria] medicion pendiente; port_battery_mv devolvera 0");
 }
 
 bool port_send(const uint8_t *buf, size_t len)

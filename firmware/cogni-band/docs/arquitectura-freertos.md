@@ -102,7 +102,7 @@ la da por desconocida si pasan 48 h.
 | Modelo de caidas | TFLite Micro int8; validar inferencia, latencia y falsas alarmas en la placa |
 | Drivers MPU6050 / MAX30102 | Integrados; validar lecturas y calibracion en la placa |
 | ESP-NOW | Unicast al peer configurado; canal y MAC en `include/band_config.h` |
-| Medicion de bateria | Pendiente de divisor y ADC; en modo real `port_battery_mv()` devuelve `0` |
+| Medicion de bateria | ADC1 en GPIO1, calibrado y con divisor 2:1; validar el montaje real |
 
 La frontera esta en `src/band_port.h`: las tareas solo llaman a `port_*`.
 
@@ -112,7 +112,10 @@ La frontera esta en `src/band_port.h`: las tareas solo llaman a `port_*`.
 `BAND_SIM=0`; ejecuta `pio run -e lolin-s3-mini -t upload` y
 `pio device monitor -e lolin-s3-mini`. El MPU6050 imprime aceleracion y giroscopio
 cada segundo; el MAX30102 imprime BPM, SpO2 estimada y calidad al completar cada lectura.
-La medicion de bateria aun no esta integrada.
+La medicion de bateria usa ADC1 en GPIO1 y asume un divisor resistivo 2:1
+(dos resistencias iguales) con un condensador de 100 nF a GND. Verifica que ese
+circuito este conectado antes de alimentar la entrada; el porcentaje se estima
+a partir del voltaje LiPo y puede requerir calibracion con la bateria real.
 
 **Resultados por Wi-Fi, sin cable serial (modo `BAND_COMM_MODE_WIFI_DEBUG`):** al arrancar,
 la pulsera crea el punto de acceso

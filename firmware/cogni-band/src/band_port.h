@@ -8,7 +8,7 @@
  *   ----------------------------------   ---------------------------------
  *   port_idf.c / port_host.c             tiempo y log
  *   port_sim.c            (BAND_SIM=1)   IMU, PPG, bateria y robot simulados
- *   ports reales          (BAND_SIM=0)   MPU6050, MAX30102, I2C; radio y bateria pendientes
+ *   ports reales          (BAND_SIM=0)   MPU6050, MAX30102, I2C, radio y bateria
  */
 #ifndef BAND_PORT_H
 #define BAND_PORT_H

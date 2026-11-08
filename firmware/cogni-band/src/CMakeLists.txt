@@ -34,6 +34,7 @@ idf_component_register(
         esp_netif
         esp_wifi
         esp_driver_i2c
+        esp_adc
         esp_timer
         freertos
         log
