@@ -1,5 +1,7 @@
 #include <unity.h>
 
+#include <string.h>
+
 #include "DeskApp.h"
 
 static desk_app_t app;
@@ -216,6 +218,123 @@ void test_medication_alarm_does_not_interrupt_fall_prompt(void)
     TEST_ASSERT_EQUAL_INT(DESK_SCREEN_FALL_PROMPT, desk_app_view(&app).screen);
 }
 
+static bool is_bank_question(const game_question_t *q)
+{
+    for (uint8_t i = 0u; i < game_content_count(); ++i) {
+        const game_question_t *b = game_content_get(i);
+        if (strcmp(b->lines[0], q->lines[0]) == 0 &&
+            ((b->lines[1] == 0) == (q->lines[1] == 0)) &&
+            (b->lines[1] == 0 || strcmp(b->lines[1], q->lines[1]) == 0)) return true;
+    }
+    return false;
+}
+
+static void go_idle(void)
+{
+    desk_app_tick(&app, DESK_SPLASH_DURATION_MS, nullptr);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_IDLE, desk_app_view(&app).screen);
+}
+
+void test_wake_shows_good_morning_and_ok_starts_the_game_with_orientation(void)
+{
+    go_idle();
+    desk_app_set_clock(&app, true, 7u, 30u);
+    desk_app_set_date(&app, true, 1u, 9u, 11u);   // lunes 9 de noviembre
+    TEST_ASSERT_TRUE(desk_app_on_wake(&app, 10000u));
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_WAKE, desk_app_view(&app).screen);
+
+    desk_app_on_input(&app, DESK_INPUT_OK, 11000u, nullptr);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_GAME, desk_app_view(&app).screen);
+    desk_app_on_input(&app, DESK_INPUT_OK, 11100u, nullptr);   // empezar
+    const game_view_t v = desk_app_view(&app).game;
+    TEST_ASSERT_EQUAL_INT(GAME_STATE_QUESTION, v.state);
+    TEST_ASSERT_EQUAL_STRING("Lunes", v.question->options[v.question->correct]);
+}
+
+void test_wake_without_clock_still_offers_the_bank_questions(void)
+{
+    go_idle();
+    TEST_ASSERT_TRUE(desk_app_on_wake(&app, 10000u));
+    desk_app_on_input(&app, DESK_INPUT_OK, 11000u, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_OK, 11100u, nullptr);
+    const game_view_t v = desk_app_view(&app).game;
+    TEST_ASSERT_TRUE(is_bank_question(v.question));
+}
+
+void test_wake_left_button_postpones_to_idle(void)
+{
+    go_idle();
+    TEST_ASSERT_TRUE(desk_app_on_wake(&app, 10000u));
+    desk_app_on_input(&app, DESK_INPUT_LEFT, 11000u, nullptr);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_IDLE, desk_app_view(&app).screen);
+}
+
+void test_wake_works_from_the_menu_and_other_calm_screens(void)
+{
+    go_idle();
+    desk_app_on_input(&app, DESK_INPUT_OK, 6000u, nullptr);   // MENU
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_MENU, desk_app_view(&app).screen);
+    TEST_ASSERT_TRUE(desk_app_on_wake(&app, 7000u));
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_WAKE, desk_app_view(&app).screen);
+}
+
+void test_repeated_wake_is_ignored_for_thirty_minutes(void)
+{
+    go_idle();
+    TEST_ASSERT_TRUE(desk_app_on_wake(&app, 10000u));
+    desk_app_on_input(&app, DESK_INPUT_LEFT, 11000u, nullptr);
+    TEST_ASSERT_FALSE(desk_app_on_wake(&app, 12000u));
+    TEST_ASSERT_FALSE(desk_app_on_wake(&app, 10000u + DESK_WAKE_COOLDOWN_MS - 1u));
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_IDLE, desk_app_view(&app).screen);
+    TEST_ASSERT_TRUE(desk_app_on_wake(&app, 10000u + DESK_WAKE_COOLDOWN_MS));
+}
+
+void test_wake_does_not_interrupt_a_fall_or_medication_or_the_game(void)
+{
+    go_idle();
+    alba_event_t event;
+    alba_pack_event(&event, 12u, 1000u, ALBA_ALERTA_CAIDA_DETECTADA, 3900u, ALBA_CONF_PENDIENTE);
+    desk_app_on_fall_event(&app, &event, 1000u, nullptr);
+    TEST_ASSERT_FALSE(desk_app_on_wake(&app, 2000u));
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_FALL_PROMPT, desk_app_view(&app).screen);
+
+    desk_app_init(&app, 0u);
+    go_idle();
+    TEST_ASSERT_TRUE(desk_app_show_medication_alarm(&app, 0u));
+    TEST_ASSERT_FALSE(desk_app_on_wake(&app, 2000u));
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_MEDICATION_ALERT, desk_app_view(&app).screen);
+
+    desk_app_init(&app, 0u);
+    go_idle();
+    desk_app_on_input(&app, DESK_INPUT_OK, 6000u, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_RIGHT, 6100u, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_RIGHT, 6200u, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_OK, 6300u, nullptr);   // juego
+    TEST_ASSERT_FALSE(desk_app_on_wake(&app, 7000u));
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_GAME, desk_app_view(&app).screen);
+}
+
+void test_fall_interrupts_the_wake_screen(void)
+{
+    go_idle();
+    TEST_ASSERT_TRUE(desk_app_on_wake(&app, 10000u));
+    alba_event_t event;
+    alba_pack_event(&event, 12u, 11000u, ALBA_ALERTA_CAIDA_DETECTADA, 3900u, ALBA_CONF_PENDIENTE);
+    desk_app_on_fall_event(&app, &event, 11000u, nullptr);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_FALL_PROMPT, desk_app_view(&app).screen);
+}
+
+void test_invalid_date_is_rejected(void)
+{
+    go_idle();
+    desk_app_set_clock(&app, true, 7u, 30u);
+    desk_app_set_date(&app, true, 9u, 9u, 11u);    // dia de semana inexistente
+    TEST_ASSERT_TRUE(desk_app_on_wake(&app, 10000u));
+    desk_app_on_input(&app, DESK_INPUT_OK, 11000u, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_OK, 11100u, nullptr);
+    TEST_ASSERT_TRUE(is_bank_question(desk_app_view(&app).game.question));   // sin orientacion
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
@@ -230,5 +349,13 @@ int main(int, char **)
     RUN_TEST(test_confirmed_fall_is_visible_until_ok);
     RUN_TEST(test_medication_alarm_has_dedicated_screen_and_ok_acknowledges);
     RUN_TEST(test_medication_alarm_does_not_interrupt_fall_prompt);
+    RUN_TEST(test_wake_shows_good_morning_and_ok_starts_the_game_with_orientation);
+    RUN_TEST(test_wake_without_clock_still_offers_the_bank_questions);
+    RUN_TEST(test_wake_left_button_postpones_to_idle);
+    RUN_TEST(test_wake_works_from_the_menu_and_other_calm_screens);
+    RUN_TEST(test_repeated_wake_is_ignored_for_thirty_minutes);
+    RUN_TEST(test_wake_does_not_interrupt_a_fall_or_medication_or_the_game);
+    RUN_TEST(test_fall_interrupts_the_wake_screen);
+    RUN_TEST(test_invalid_date_is_rejected);
     return UNITY_END();
 }

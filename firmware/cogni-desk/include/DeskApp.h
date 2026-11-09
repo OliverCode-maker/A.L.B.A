@@ -36,8 +36,12 @@ typedef enum {
     DESK_SCREEN_FALL_PROMPT,
     DESK_SCREEN_FALL_CONFIRMED,
     DESK_SCREEN_HEALTH,
-    DESK_SCREEN_GAME
+    DESK_SCREEN_GAME,
+    DESK_SCREEN_WAKE
 } desk_screen_t;
+
+/* Despues de un aviso de despertar se ignoran los siguientes (el robot ya esta atendiendo al paciente). */
+#define DESK_WAKE_COOLDOWN_MS (30ul * 60ul * 1000ul)
 
 typedef struct {
     uint8_t hour;
@@ -72,6 +76,12 @@ typedef struct {
     uint8_t selected_alarm;
     uint8_t alarm_edit_field;
     uint8_t medication_alarm_index;
+    bool date_valid;
+    uint8_t date_wday;     /* 0 = domingo */
+    uint8_t date_mday;
+    uint8_t date_month;    /* 1..12 */
+    bool wake_seen;
+    uint32_t wake_last_ms;
     uint32_t alarm_revision;
     desk_alarm_t alarms[DESK_ALARM_COUNT];
     robot_fall_t fall;
@@ -86,6 +96,14 @@ robot_action_t desk_app_on_fall_event(desk_app_t *app, const alba_event_t *event
                                       uint32_t now_ms, uint16_t *ref_seq);
 bool desk_app_show_medication_alarm(desk_app_t *app, uint8_t alarm_index);
 void desk_app_set_clock(desk_app_t *app, bool valid, uint8_t hour, uint8_t minute);
+/* Fecha local (para las preguntas de orientacion del juego); wday: 0 = domingo. */
+void desk_app_set_date(desk_app_t *app, bool valid, uint8_t wday, uint8_t mday, uint8_t month);
+/* La pulsera detecto el despertar: muestra "Buenos dias", la hora del medicamento y ofrece el juego.
+ * true si se mostro; false si se ignoro (hay una caida o alarma en curso, el juego ya corre, o hay
+ * un despertar reciente). */
+bool desk_app_on_wake(desk_app_t *app, uint32_t now_ms);
+/* Semilla del sorteo de preguntas (por ejemplo esp_random() al arrancar). */
+void desk_app_seed_game(desk_app_t *app, uint32_t seed);
 void desk_app_set_alarm(desk_app_t *app, uint8_t index, const desk_alarm_t *alarm);
 uint32_t desk_app_alarm_revision(const desk_app_t *app);
 /* Resultado de la ultima ronda de CogniGame; result.revision cambia cada vez que termina una. */
