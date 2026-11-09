@@ -606,9 +606,9 @@ static void comm_transmit(const tx_item_t *it)
         len = sizeof p;
     }
 
-    /* Las alertas se reintentan; la telemetria no (llega otra en 30 s).
-     * TODO ESP-NOW: confirmacion (ACK) del robot para eventos criticos. */
-    const unsigned tries = (it->kind == TX_ALERT) ? (1u + BAND_TX_RETRIES) : 1u;
+    /* Reintentar tambien la telemetria evita perder lecturas por una perdida
+     * puntual de radio. El robot descarta los duplicados usando el seq. */
+    const unsigned tries = 1u + BAND_TX_RETRIES;
     for (unsigned i = 0; i < tries; i++) {
         if (port_send(buf, len)) { STAT_INC(tx_sent); return; }
         if (i + 1u < tries) vTaskDelay(pdMS_TO_TICKS(BAND_TX_RETRY_DELAY_MS));

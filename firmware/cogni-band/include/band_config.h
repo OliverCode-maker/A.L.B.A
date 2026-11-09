@@ -78,7 +78,7 @@
 #define BAND_RX_MAX_LEN           16u      /* el mayor mensaje del robot mide 10 B    */
 
 /* ---- Envio -------------------------------------------------------------------*/
-#define BAND_TX_RETRIES           3        /* reintentos de una alerta si esp_now_send falla */
+#define BAND_TX_RETRIES           3        /* reintentos de envio cuando falla esp_now_send */
 #define BAND_TX_RETRY_DELAY_MS    50u
 
 /* ---- Tareas: prioridad (mayor = mas urgente) y pila en bytes ---------------------*/
