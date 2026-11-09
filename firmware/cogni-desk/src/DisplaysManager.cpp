@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <math.h>
 #include "DisplaysManager.h"
 #include "CloudManager.h"
 #include "DeskConfig.h"
@@ -483,6 +484,25 @@ void mostrarVista(const desk_view_t *vista, const environment_reading_t *ambient
     oledDerecho.printf("Aviso: %s", alarm.enabled ? "SI" : "NO");
     escribirLinea(oledIzquierdo, 46, "IZQ/DER: cambiar");
     escribirLinea(oledIzquierdo, 56, "OK: avanza/guarda");
+  } else if (vista->screen == DESK_SCREEN_WAKE) {
+    // Sol en el OLED izquierdo.
+    oledIzquierdo.fillCircle(64, 32, 12, SSD1306_WHITE);
+    for (int i = 0; i < 8; ++i) {
+      const float angulo = static_cast<float>(i) * 0.7853982f;
+      const int x1 = 64 + static_cast<int>(18.0f * cosf(angulo));
+      const int y1 = 32 + static_cast<int>(18.0f * sinf(angulo));
+      const int x2 = 64 + static_cast<int>(26.0f * cosf(angulo));
+      const int y2 = 32 + static_cast<int>(26.0f * sinf(angulo));
+      oledIzquierdo.drawLine(x1, y1, x2, y2, SSD1306_WHITE);
+    }
+    escribirLinea(oledDerecho, 4, "BUENOS DIAS");
+    if (vista->clock_valid) {
+      oledDerecho.setCursor(4, 20);
+      oledDerecho.printf("Son las %02u:%02u", static_cast<unsigned>(vista->clock_hour),
+                         static_cast<unsigned>(vista->clock_minute));
+    }
+    escribirLinea(oledDerecho, 34, "Hora de su medicina");
+    escribirLinea(oledDerecho, 54, "OK:Jugar IZQ:Luego");
   } else if (vista->screen == DESK_SCREEN_MEDICATION_ALERT) {
     oledIzquierdo.drawRoundRect(20, 8, 88, 48, 8, SSD1306_WHITE);
     oledIzquierdo.drawLine(64, 18, 64, 46, SSD1306_WHITE);

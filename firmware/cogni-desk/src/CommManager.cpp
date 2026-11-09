@@ -154,6 +154,14 @@ void handleReceivedPacket(desk_app_t *app, const ReceivedPacket &packet, uint32_
                 static_cast<unsigned>(message.evt.confirmacion),
                 static_cast<unsigned>(message.evt.hdr.seq));
   cloudOnEvent(&message.evt);
+  if (message.evt.alerta_tipo == ALBA_ALERTA_VIGILIA_TRIGGER) {
+    // La pulsera detecto el despertar matutino: saludo, aviso de medicina y estimulacion cognitiva.
+    if (desk_app_on_wake(app, now_ms)) {
+      Serial.printf("[despertar] la pulsera detecto el despertar (bpm=%u)\n",
+                    static_cast<unsigned>(message.evt.valor_pico));
+    }
+    return;
+  }
   ejecutarAccionRobot(
       desk_app_on_fall_event(app, &message.evt, now_ms, nullptr), 0u);
 }

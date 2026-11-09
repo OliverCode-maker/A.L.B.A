@@ -142,10 +142,14 @@ void actualizarClockManager(desk_app_t *app, uint32_t now_ms) {
   struct tm local_time;
   if (!readValidLocalTime(&local_time)) {
     desk_app_set_clock(app, false, 0u, 0u);
+    desk_app_set_date(app, false, 0u, 1u, 1u);
     return;
   }
 
   desk_app_set_clock(app, true, static_cast<uint8_t>(local_time.tm_hour),
                      static_cast<uint8_t>(local_time.tm_min));
+  desk_app_set_date(app, true, static_cast<uint8_t>(local_time.tm_wday),
+                    static_cast<uint8_t>(local_time.tm_mday),
+                    static_cast<uint8_t>(local_time.tm_mon + 1));
   updateAlarms(app, local_time);
 }

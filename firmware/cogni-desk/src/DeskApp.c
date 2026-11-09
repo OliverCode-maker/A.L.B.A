@@ -1,5 +1,17 @@
 #include "DeskApp.h"
 
+static void start_game(desk_app_t *app, uint32_t now_ms)
+{
+    game_clock_t clock;
+    clock.valid = app->clock_valid && app->date_valid;
+    clock.wday = app->date_wday;
+    clock.mday = app->date_mday;
+    clock.month = app->date_month;
+    clock.hour = app->clock_hour;
+    cogni_game_start_with_clock(&app->game, now_ms, &clock);
+    app->screen = DESK_SCREEN_GAME;
+}
+
 static void apply_fall_action(desk_app_t *app, robot_action_t action)
 {
     switch (action) {
@@ -28,6 +40,12 @@ void desk_app_init(desk_app_t *app, uint32_t now_ms)
     app->clock_valid = false;
     app->clock_hour = 0u;
     app->clock_minute = 0u;
+    app->date_valid = false;
+    app->date_wday = 0u;
+    app->date_mday = 1u;
+    app->date_month = 1u;
+    app->wake_seen = false;
+    app->wake_last_ms = 0u;
     app->selected_alarm = 0u;
     app->alarm_edit_field = 0u;
     app->medication_alarm_index = 0u;
@@ -93,6 +111,13 @@ robot_action_t desk_app_on_input(desk_app_t *app, desk_input_t input, uint32_t n
     case DESK_SCREEN_MEDICATION_ALERT:
         if (input == DESK_INPUT_OK) app->screen = DESK_SCREEN_IDLE;
         break;
+    case DESK_SCREEN_WAKE:
+        if (input == DESK_INPUT_OK) {
+            start_game(app, now_ms);                 /* OK: empezar la estimulacion */
+        } else if (input == DESK_INPUT_LEFT) {
+            app->screen = DESK_SCREEN_IDLE;          /* IZQ: mas tarde */
+        }
+        break;
     case DESK_SCREEN_IDLE:
         if (input == DESK_INPUT_OK) app->screen = DESK_SCREEN_MENU;
         break;
@@ -108,8 +133,7 @@ robot_action_t desk_app_on_input(desk_app_t *app, desk_input_t input, uint32_t n
             } else if (app->menu_selection == 1u) {
                 app->screen = DESK_SCREEN_HEALTH;
             } else if (app->menu_selection == 2u) {
-                cogni_game_start(&app->game, now_ms);
-                app->screen = DESK_SCREEN_GAME;
+                start_game(app, now_ms);
             } else if (app->menu_selection == 3u) {
                 app->screen = DESK_SCREEN_CLOCK;
             } else {
@@ -207,6 +231,41 @@ void desk_app_set_clock(desk_app_t *app, bool valid, uint8_t hour, uint8_t minut
     app->clock_valid = valid;
     app->clock_hour = hour < 24u ? hour : 0u;
     app->clock_minute = minute < 60u ? minute : 0u;
+}
+
+void desk_app_set_date(desk_app_t *app, bool valid, uint8_t wday, uint8_t mday, uint8_t month)
+{
+    app->date_valid = valid && wday < 7u && mday >= 1u && mday <= 31u && month >= 1u && month <= 12u;
+    if (app->date_valid) {
+        app->date_wday = wday;
+        app->date_mday = mday;
+        app->date_month = month;
+    }
+}
+
+bool desk_app_on_wake(desk_app_t *app, uint32_t now_ms)
+{
+    if (app->wake_seen && (uint32_t)(now_ms - app->wake_last_ms) < DESK_WAKE_COOLDOWN_MS) {
+        return false;
+    }
+    if (robot_fall_state(&app->fall) != ROBOT_FALL_IDLE) return false;
+
+    switch (app->screen) {
+    case DESK_SCREEN_IDLE:
+    case DESK_SCREEN_MENU:
+    case DESK_SCREEN_FEATURE:
+    case DESK_SCREEN_ENVIRONMENT:
+    case DESK_SCREEN_CLOCK:
+    case DESK_SCREEN_HEALTH:
+        break;
+    default:
+        return false;   /* caida, medicamento, edicion de alarma, juego o aviso ya en pantalla */
+    }
+
+    app->wake_seen = true;
+    app->wake_last_ms = now_ms;
+    app->screen = DESK_SCREEN_WAKE;
+    return true;
 }
 
 void desk_app_set_alarm(desk_app_t *app, uint8_t index, const desk_alarm_t *alarm)

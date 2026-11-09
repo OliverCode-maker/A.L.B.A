@@ -40,6 +40,13 @@ Copiar si falla: lineas `[radio]` de la pulsera y `[diag]` + `[wifi]` del robot 
 2. Menu -> **CogniGame**: jugar una ronda de 5 preguntas con los 3 botones. Ver que el texto cabe en las dos pantallas.
 3. Buzzer: suena en alarma de medicamento y en caida (patrones distintos).
 
+## 4b. Despertar y ejercicios de orientacion
+
+1. Con el robot en reposo, escribir `w` en el monitor serial: simula el despertar. Debe verse "BUENOS DIAS / Son las HH:MM / Hora de su medicina" y sonar el buzzer.
+2. OK -> empieza el juego: las 3 primeras preguntas son de **orientacion** (dia de la semana, fecha, momento del dia) y deben coincidir con la fecha y hora reales; las 2 ultimas son del banco de preguntas. IZQ en el saludo lo pospone.
+3. Sin hora NTP (sin Wi-Fi) el juego usa solo el banco de preguntas.
+4. El despertar real: la pulsera manda `VIGILIA_TRIGGER`; el robot imprime `[despertar] la pulsera detecto el despertar (bpm=N)` y muestra la misma pantalla. Se ignoran avisos repetidos por 30 min, y nunca interrumpe una caida, el medicamento ni una partida en curso.
+
 ## 5. Nube (ThingsBoard)
 
 1. Robot: `[nube] conectado a ThingsBoard` y lineas `[nube] -> {...}`.

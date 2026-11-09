@@ -1,10 +1,31 @@
 #include "cogni_game.h"
 
+static uint8_t orientation_count(const cogni_game_t *g)
+{
+    return g->orientation_on ? (uint8_t)GAME_ORIENTATION_COUNT : 0u;
+}
+
 static uint8_t current_pool_index(const cogni_game_t *g)
 {
     const uint8_t count = game_content_count();
-    if (count == 0u) return 0u;
-    return (uint8_t)((g->pool_start + g->q_number) % count);
+    if (count == 0u || g->q_number < orientation_count(g)) return 0u;
+    return (uint8_t)((g->pool_start + (g->q_number - orientation_count(g))) % count);
+}
+
+/* Pregunta actual: orientacion (armada al vuelo) o del banco. */
+static const game_question_t *current_question(const cogni_game_t *g)
+{
+    return g->q_number < orientation_count(g) ? &g->dyn_question
+                                              : game_content_get(current_pool_index(g));
+}
+
+static void prepare_question(cogni_game_t *g)
+{
+    if (g->q_number < orientation_count(g) &&
+        !game_orientation_build(&g->clock, g->q_number, g->rounds_played, &g->dyn_text,
+                                &g->dyn_question)) {
+        g->orientation_on = false;   /* el reloj dejo de servir: se sigue solo con el banco */
+    }
 }
 
 static uint32_t average_ms(const cogni_game_t *g)
@@ -22,6 +43,7 @@ static void advance(cogni_game_t *g, uint32_t now_ms)
     } else {
         g->state = GAME_STATE_QUESTION;
         g->q_shown_ms = now_ms;
+        prepare_question(g);
     }
     ++g->revision;
 }
@@ -42,16 +64,26 @@ void cogni_game_init(cogni_game_t *g)
     g->total_resp_ms = 0u;
     g->revision = 0u;
     g->results_revision = 0u;
+    g->orientation_on = false;
+    g->clock.valid = false;
 }
 
 void cogni_game_start(cogni_game_t *g, uint32_t now_ms)
 {
+    cogni_game_start_with_clock(g, now_ms, 0);
+}
+
+void cogni_game_start_with_clock(cogni_game_t *g, uint32_t now_ms, const game_clock_t *clock)
+{
     (void)now_ms;
+    g->orientation_on = game_clock_is_valid(clock);
+    if (g->orientation_on) g->clock = *clock;
     const uint8_t count = game_content_count();
+    const uint8_t from_pool = (uint8_t)(GAME_QUESTIONS_PER_ROUND - orientation_count(g));
     /* Cada ronda empieza en una pregunta distinta del banco. */
     g->pool_start = count == 0u
         ? 0u
-        : (uint8_t)(((uint32_t)g->rounds_played * GAME_QUESTIONS_PER_ROUND) % count);
+        : (uint8_t)(((uint32_t)g->rounds_played * from_pool) % count);
     g->q_number = 0u;
     g->score = 0u;
     g->answered = 0u;
@@ -72,12 +104,13 @@ bool cogni_game_on_button(cogni_game_t *g, game_button_t button, uint32_t now_ms
             g->state = GAME_STATE_QUESTION;
             g->q_number = 0u;
             g->q_shown_ms = now_ms;
+            prepare_question(g);
             ++g->revision;
         }
         return false;
 
     case GAME_STATE_QUESTION: {
-        const game_question_t *q = game_content_get(current_pool_index(g));
+        const game_question_t *q = current_question(g);
         g->last_choice = (uint8_t)button;
         g->last_correct = (q != 0) && ((uint8_t)button == q->correct);
         if (g->last_correct) ++g->score;
@@ -122,7 +155,7 @@ game_view_t cogni_game_view(const cogni_game_t *g)
     v.last_correct = g->last_correct;
     v.last_choice = g->last_choice;
     v.question = (g->state == GAME_STATE_QUESTION || g->state == GAME_STATE_FEEDBACK)
-        ? game_content_get(current_pool_index(g))
+        ? current_question(g)
         : 0;
     v.avg_ms = average_ms(g);
     v.revision = g->revision;

@@ -28,6 +28,7 @@ static buzzer_pattern_t patronBuzzer(desk_screen_t screen) {
     case DESK_SCREEN_FALL_PROMPT:     return BUZZER_PATTERN_FALL;
     case DESK_SCREEN_FALL_CONFIRMED:  return BUZZER_PATTERN_FALL_CONFIRMED;
     case DESK_SCREEN_MEDICATION_ALERT: return BUZZER_PATTERN_MEDICATION;
+    case DESK_SCREEN_WAKE:            return BUZZER_PATTERN_MEDICATION;
     default:                          return BUZZER_PATTERN_OFF;
     }
 }
@@ -70,6 +71,12 @@ void loop() {
     actualizarWifiManager(now_ms);
     const bool new_environment_sample = actualizarSensores(now_ms);
     procesarComunicacionesBackground(&app, now_ms);
+    // Prueba sin esperar la manana: escribir "w" en el monitor serial simula el despertar.
+    while (Serial.available() > 0) {
+        if (Serial.read() == 'w' && desk_app_on_wake(&app, now_ms)) {
+            Serial.println(F("[despertar] simulado desde el serial"));
+        }
+    }
     const environment_reading_t ambiente_actual = leerAmbiente();
     const game_result_t resultado_juego = desk_app_game_result(&app);
     actualizarCloud(now_ms, &ambiente_actual, &resultado_juego);

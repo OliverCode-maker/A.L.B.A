@@ -274,3 +274,22 @@ La pantalla "CAIDA CONFIRMADA" ya no dice siempre "pendiente de red": muestra lo
 | `Nube sin configurar` / `Llama al cuidador` | Falta `include/cloud_secrets.h` |
 
 "Enviado" quiere decir que el robot lo publico; que ThingsBoard dispare la alarma o el correo se confirma en su dashboard. La logica esta en `lib/cloud_outbox` (`cloud_outbox_alert_status`, `cloud_alert_show`) y se prueba en el PC.
+
+## Despertar y ejercicios de orientacion
+
+La propuesta pide que, al detectar la transicion sueno-vigilia, el robot active la alarma de medicacion y la estimulacion cognitiva.
+
+- La pulsera (`wake_detector`) manda el evento `VIGILIA_TRIGGER`. Antes el robot lo ignoraba (solo publicaba a la nube).
+- Ahora `desk_app_on_wake()` muestra la pantalla **BUENOS DIAS** (hora, "Hora de su medicina"), suena el buzzer con el patron de medicamento (maximo 60 s) y ofrece el juego: **OK** empieza, **IZQ** lo pospone.
+- No interrumpe una caida, una alarma de medicamento, la edicion de alarmas ni una partida en curso, y ignora despertares repetidos durante 30 min (`DESK_WAKE_COOLDOWN_MS`).
+- Prueba sin esperar a la manana: escribir `w` en el monitor serial del robot.
+
+### Preguntas de orientacion (CogniGame)
+
+Si el robot tiene hora NTP, cada ronda empieza con 3 preguntas de orientacion armadas con la fecha real (`lib/cogni_game/orientation.c`) y sigue con 2 del banco personal (`game_content.c`):
+
+1. Que dia de la semana es hoy (Lunes ... Domingo)
+2. Que fecha es hoy (numero del dia del mes)
+3. Que momento del dia es ahora (Manana 5-11 h, Tarde 12-18 h, Noche 19-4 h)
+
+Siempre 3 opciones cerradas (botones IZQ / OK / DER). Las opciones falsas son dias, fechas y momentos validos y distintos entre si, y la posicion de la correcta cambia entre rondas. Sin hora NTP la ronda usa solo el banco de preguntas.
