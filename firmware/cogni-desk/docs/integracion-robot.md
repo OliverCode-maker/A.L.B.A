@@ -1,8 +1,74 @@
 # Integracion del robot (cogni-desk) con la pulsera y ThingsBoard
 
-Para Oliver y Gaby. Todo lo de abajo ya existe y esta probado en el PC; **no toca `src/main.cpp`**:
-solo hay que llamarlo. Los modulos son C puro (sin ESP-NOW, sin WiFi, sin FreeRTOS), asi que el
-robot decide como conectarlos.
+Para Oliver y Gaby. El firmware del escritorio separa la maquina de estados de la aplicacion
+(C puro, `src/DeskApp.c`) de los adaptadores Arduino de pantalla, botones y ESP-NOW (C++).
+`src/main.cpp` solo coordina esas capas. El enlace ESP-NOW recibe y valida paquetes de la pulsera,
+y permite devolver CANCELAR. La publicacion a la nube por MQTT sigue pendiente.
+
+El prototipo actual cubre el splash, ojos con parpadeo no bloqueante, menu de cuatro opciones
+(Sensor, Salud, CogniGame y Reloj), la vista del DHT11 y las interfaces de caida y recordatorio
+de medicamento. El reloj sincroniza hora local por NTP cuando hay Wi-Fi y ofrece tres alarmas
+diarias persistentes. Salud y CogniGame siguen pendientes de conectar a sus funciones.
+No se debe mostrar que se aviso al cuidador hasta completar y verificar la publicacion en la nube.
+
+Las cuatro opciones del menu usan sus iconos bitmap. Las alertas de caida tienen prioridad sobre
+la pantalla de medicamentos.
+Las alarmas se configuran desde Reloj y se guardan en NVS; confirmar el aviso con OK solo lo
+cierra y no registra una toma de medicamento.
+
+El mapa de pines confirmado esta centralizado en `include/DeskConfig.h`: botones GPIO 4/5/6,
+DHT11 GPIO 7 y dos buses I2C OLED en GPIO 8/9 y 17/18. El DHT11 se consulta cada 2 segundos al
+abrir "Sensor ambiente"; las lecturas invalidas se muestran como "Sin lectura" y se informan
+una sola vez por fallo continuo.
+
+El enlace ESP-NOW del escritorio usa canal 1 y filtra la MAC STA configurada de la pulsera
+(`AC:27:6E:CF:88:E4`). La MAC STA del escritorio debe coincidir con `44:1B:F6:8C:AC:04`, que
+la pulsera tiene configurada como peer. El escritorio imprime su MAC al arrancar e informa si
+no coincide. La interfaz y el DHT11 siguen funcionando aunque ESP-NOW no este disponible; solo
+se desactiva la comunicacion. Si el modulo ESP32-S3 usado tiene otra MAC, actualiza
+`DESK_EXPECTED_STA_MAC` y `BAND_ESPNOW_PEER_MAC` para que ambas configuraciones coincidan.
+
+El callback de radio solo copia paquetes de la pulsera a una cola; el loop valida y deduplica
+con `robot_link` antes de cambiar la pantalla. La accion CANCELAR se envia por ESP-NOW y se
+reintenta segun `robot_fall`. MQTT aun no esta integrado; una caida confirmada se muestra como
+pendiente de aviso al cuidador. Al integrar MQTT, la conexion Wi-Fi debe permanecer en canal 1
+para compartir la radio con ESP-NOW.
+
+## Configuracion Wi-Fi
+
+`WifiManager` intenta las dos credenciales EEPROM guardadas y, si ninguna conecta, inicia el
+punto de acceso `CogniDesk-Setup`. La clave temporal del AP se imprime por Serial; desde el
+celular se abre `http://192.168.4.1`. El formulario mantiene la interfaz del Desk activa y solo
+reemplaza el espacio de credenciales anterior despues de confirmar una conexion exitosa, por lo
+que un intento fallido no borra la red guardada. El almacenamiento conserva el formato de dos
+espacios de la libreria compartida; por ese formato la clave ingresada admite hasta 49 caracteres.
+
+El router debe estar fijado en canal 1, igual que ESP-NOW en el Desk y la pulsera. El gestor usa
+`WiFi.begin(..., DESK_WIFI_CHANNEL)`. `ClockManager` sincroniza la hora local por NTP en UTC-5;
+sin conexion y sin una sincronizacion previa, la pantalla muestra `--:--` y las alarmas no se
+disparan. `include/apwifieeprommode.h` se conserva como referencia de la libreria recibida, pero
+no se incluye: su flujo es bloqueante, fija canal 6 y escribe la contrasena de Wi-Fi por Serial.
+
+En la opcion Reloj, OK abre la edicion de la alarma seleccionada, derecha cambia entre las tres
+alarmas y izquierda vuelve al menu. En la edicion, izquierda/derecha cambian hora, minuto o
+estado; OK avanza entre esos campos y guarda al confirmar el estado. Las alarmas se repiten a
+diario y se almacenan en NVS. OK cierra el aviso de medicamento, pero no confirma que se haya
+tomado.
+
+## Limite de integracion con la nube
+
+La implementacion de MQTT/ThingsBoard corresponde al companero responsable de nube. Para mantener
+responsabilidades separadas, `CommManager` conserva el transporte ESP-NOW, la validacion y la
+deduplicacion; el futuro adaptador de nube debe recibir solo mensajes nuevos ya decodificados:
+telemetria (`alba_telemetry_t`) y eventos (`alba_event_t`). El formato y topico existentes estan
+definidos por `../common/alba_thingsboard.h` (`ALBA_TB_TOPIC`). La conversion y publicacion no deben
+bloquear el callback ESP-NOW ni impedir que el flujo local de caidas atienda el boton.
+
+Wi-Fi y ESP-NOW comparten la radio: la conexion al router debe permanecer en canal 1 o se tendra
+que acordar y configurar otro canal en los dos dispositivos. El token de ThingsBoard debe
+inyectarse fuera del repositorio; las credenciales Wi-Fi se guardan en EEPROM y el AP de
+configuracion usa una clave aleatoria temporal. La pantalla solo debera afirmar que el cuidador
+recibio el aviso despues de confirmar el resultado de publicacion.
 
 | Quiero... | Uso | Donde |
 |-----------|-----|-------|
@@ -19,10 +85,13 @@ robot decide como conectarlos.
  pulsera --ESP-NOW--> robot_link_on_packet --NEW--> telemetria: alba_telemetry_to_tb -> MQTT
                                                 |-> evento:     alba_event_to_tb     -> MQTT
                                                 '-> evento de caida: robot_fall_on_event
- robot_fall:  SHOW_PROMPT -> pantalla/voz "¿Estas bien?"   | boton -> robot_fall_on_button_ok
+ robot_fall:  SHOW_PROMPT -> pantalla "¿Estas bien?"       | boton -> robot_fall_on_button_ok
               SEND_CANCEL -> alba_pack_cancel(seq++, ref_seq) -> esp_now_send   (se repite solo, ver abajo)
-              SHOW_HELP_CALLED -> "ya avise a tu cuidador"   | HIDE_PROMPT -> quitar la pregunta
+               SHOW_HELP_CALLED -> publicar alerta confirmada | HIDE_PROMPT -> quitar la pregunta
 ```
+
+ En `cogni-desk`, `SHOW_HELP_CALLED` representa que la pulsera confirmo la caida; la publicacion
+ MQTT debe completarse antes de indicar en pantalla que el cuidador fue notificado.
 
 ## Esqueleto de uso (pseudocodigo; los nombres de ESP-NOW/MQTT son los del robot)
 
@@ -69,7 +138,7 @@ void handle(robot_action_t a, uint16_t ref) {
     switch (a) {
     case ROBOT_ACT_SHOW_PROMPT:      ui_show_are_you_ok();  break;
     case ROBOT_ACT_HIDE_PROMPT:      ui_hide_prompt();      break;
-    case ROBOT_ACT_SHOW_HELP_CALLED: ui_show_help_called(); break;
+    case ROBOT_ACT_SHOW_HELP_CALLED: ui_show_fall_confirmed_pending(); break; // confirmar aviso tras publicar en MQTT
     case ROBOT_ACT_SEND_CANCEL: { alba_cancel_t c; alba_pack_cancel(&c, robot_seq++, ref);
                                   esp_now_send(band_mac, (uint8_t *)&c, sizeof c); } break;
     default: break;

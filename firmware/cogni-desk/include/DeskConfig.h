@@ -1,0 +1,24 @@
+#ifndef DESK_CONFIG_H
+#define DESK_CONFIG_H
+
+#define DESK_BUTTON_LEFT_GPIO       4u
+#define DESK_BUTTON_RIGHT_GPIO      5u
+#define DESK_BUTTON_OK_GPIO         6u
+
+#define DESK_DHT11_DATA_GPIO        7u
+#define DESK_DHT11_SAMPLE_INTERVAL_MS 2000u
+
+#define DESK_OLED_LEFT_SDA_GPIO     8u
+#define DESK_OLED_LEFT_SCL_GPIO     9u
+#define DESK_OLED_RIGHT_SDA_GPIO   17u
+#define DESK_OLED_RIGHT_SCL_GPIO   18u
+#define DESK_OLED_I2C_ADDRESS     0x3Cu
+
+#define DESK_ESPNOW_CHANNEL         1u
+#define DESK_WIFI_CHANNEL           DESK_ESPNOW_CHANNEL
+#define DESK_BAND_STA_MAC { 0xACu, 0x27u, 0x6Eu, 0xCFu, 0x88u, 0xE4u }
+#define DESK_EXPECTED_STA_MAC { 0x44u, 0x1Bu, 0xF6u, 0x8Cu, 0xACu, 0x04u }
+
+#define DESK_BUTTON_DEBOUNCE_MS    30u
+
+#endif
