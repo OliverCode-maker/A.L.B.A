@@ -61,12 +61,29 @@ static const game_question_t pool[] = {
       { "Mi boda", "Nacio mi hijo", "Mi graduacion" }, 1 },
 };
 
+/* Banco del cuidador (ver question_config.h): si hay uno cargado reemplaza al de arriba. */
+static const game_question_t *custom_bank;
+static uint8_t custom_count;
+
+void game_content_set_custom(const game_question_t *list, uint8_t count)
+{
+    if (list == 0 || count == 0u) {
+        custom_bank = 0;
+        custom_count = 0u;
+        return;
+    }
+    custom_bank = list;
+    custom_count = count > GAME_BANK_MAX ? (uint8_t)GAME_BANK_MAX : count;
+}
+
 uint8_t game_content_count(void)
 {
+    if (custom_bank != 0) return custom_count;
     return (uint8_t)(sizeof(pool) / sizeof(pool[0]));
 }
 
 const game_question_t *game_content_get(uint8_t index)
 {
-    return index < game_content_count() ? &pool[index] : 0;
+    if (index >= game_content_count()) return 0;
+    return custom_bank != 0 ? &custom_bank[index] : &pool[index];
 }

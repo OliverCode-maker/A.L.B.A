@@ -13,6 +13,7 @@
 
 #include "alba_thingsboard.h"
 #include "cloud_outbox.h"
+#include "question_config.h"
 
 #if __has_include("cloud_secrets.h")
 #include "cloud_secrets.h"
@@ -51,6 +52,17 @@ volatile bool connected_flag;
 volatile uint32_t published_count;
 volatile uint32_t failed_count;
 
+// Preguntas del cuidador: el mensaje se lee dentro de mqtt.loop() (tarea de la nube) y se deja
+// aqui hasta que el loop principal lo aplique.
+constexpr size_t MQTT_BUFFER = 3300u;
+constexpr char TOPIC_ATTR_UPDATE[] = "v1/devices/me/attributes";
+constexpr char TOPIC_ATTR_RESPONSE[] = "v1/devices/me/attributes/response/";
+constexpr char TOPIC_ATTR_REQUEST[] = "v1/devices/me/attributes/request/1";
+constexpr char ATTR_QUESTIONS[] = "questions";
+char pending_questions[QC_TEXT_MAX + 1u];
+bool pending_questions_ready;
+char rx_json[MQTT_BUFFER];
+
 uint32_t last_env_ms;
 bool env_sent;
 uint32_t last_game_revision;
@@ -68,6 +80,28 @@ bool take() {
 
 void give() {
   xSemaphoreGive(lock);
+}
+
+void onMessage(char *topic, uint8_t *payload, unsigned int length) {
+  if (strncmp(topic, TOPIC_ATTR_UPDATE, sizeof(TOPIC_ATTR_UPDATE) - 1u) != 0) return;
+  if (length == 0u || length >= sizeof(rx_json)) return;
+  memcpy(rx_json, payload, length);
+  rx_json[length] = '\0';
+
+  static char text[QC_TEXT_MAX + 1u];   // fuera de la pila: solo la usa la tarea de la nube
+  const int n = qc_extract_string(rx_json, ATTR_QUESTIONS, text, sizeof(text));
+  if (n == -2) {
+    Serial.println(F("[nube] el atributo 'questions' es demasiado largo (maximo 2048 caracteres)"));
+    return;
+  }
+  if (n < 0) return;   // el mensaje no trae 'questions': es otro atributo
+
+  if (lock != nullptr && xSemaphoreTake(lock, pdMS_TO_TICKS(200)) == pdTRUE) {
+    memcpy(pending_questions, text, static_cast<size_t>(n) + 1u);
+    pending_questions_ready = true;
+    give();
+    Serial.printf("[nube] preguntas del cuidador recibidas (%d caracteres)\n", n);
+  }
 }
 
 void cloudTask(void *) {
@@ -98,6 +132,10 @@ void cloudTask(void *) {
         continue;
       }
       Serial.println(F("[nube] conectado a ThingsBoard"));
+      // Preguntas del cuidador: cambios en vivo y valor actual al conectar.
+      mqtt.subscribe(TOPIC_ATTR_UPDATE);
+      mqtt.subscribe("v1/devices/me/attributes/response/+");
+      mqtt.publish(TOPIC_ATTR_REQUEST, "{\"sharedKeys\":\"questions\"}");
     }
     connected_flag = true;
     mqtt.loop();
@@ -154,11 +192,12 @@ bool initCloud(void) {
 #endif
   net.setTimeout(5);
   mqtt.setServer(CLOUD_TB_HOST, CLOUD_TB_PORT);
-  mqtt.setBufferSize(512);
+  mqtt.setBufferSize(MQTT_BUFFER);
+  mqtt.setCallback(onMessage);
   mqtt.setKeepAlive(30);
   mqtt.setSocketTimeout(5);
 
-  if (xTaskCreatePinnedToCore(cloudTask, "cloud", 6144, nullptr, 1, nullptr, 0) != pdPASS) {
+  if (xTaskCreatePinnedToCore(cloudTask, "cloud", 8192, nullptr, 1, nullptr, 0) != pdPASS) {
     Serial.println(F("[nube] no se pudo crear la tarea"));
     return false;
   }
@@ -182,6 +221,24 @@ void cloudOnEvent(const alba_event_t *event) {
 void cloudOnComfort(const char *text) {
   if (!enabled || text == nullptr || !take()) return;
   cloud_outbox_push_comfort(&outbox, epochMs(), text);
+  give();
+}
+
+bool cloudTakeQuestions(char *out, size_t cap) {
+  if (!enabled || out == nullptr || cap == 0u || !take()) return false;
+  const bool ready = pending_questions_ready;
+  if (ready) {
+    strncpy(out, pending_questions, cap - 1u);
+    out[cap - 1u] = '\0';
+    pending_questions_ready = false;
+  }
+  give();
+  return ready;
+}
+
+void cloudOnQuestions(uint8_t active, uint8_t rejected) {
+  if (!enabled || !take()) return;
+  cloud_outbox_push_questions(&outbox, epochMs(), active, rejected);
   give();
 }
 

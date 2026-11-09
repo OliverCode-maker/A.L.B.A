@@ -89,6 +89,12 @@ void test_comfort_state_rejects_unsafe_text(void)
     TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)cloud_outbox_count(&o));
 }
 
+void test_question_load_result_is_published(void)
+{
+    cloud_outbox_push_questions(&o, 0u, 12u, 3u);
+    TEST_ASSERT_EQUAL_STRING("{\"q_count\":12,\"q_rejected\":3}", cloud_outbox_peek(&o));
+}
+
 void test_game_result_json_rounds_average_to_seconds(void)
 {
     cloud_outbox_push_game(&o, 0u, 4u, 5u, 6400u);
@@ -242,5 +248,6 @@ int main(void)
     RUN_TEST(test_alert_show_combines_status_cloud_and_network);
     RUN_TEST(test_comfort_state_is_published_as_room_alert);
     RUN_TEST(test_comfort_state_rejects_unsafe_text);
+    RUN_TEST(test_question_load_result_is_published);
     return UNITY_END();
 }

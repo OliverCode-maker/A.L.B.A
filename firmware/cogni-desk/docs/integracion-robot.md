@@ -307,3 +307,41 @@ La propuesta pide una alerta cuando el DHT sale del rango de confort (operacion 
 - A la nube va la clave **`room_alert`** con el texto `OK`, `TEMP_ALTA`, `TEMP_BAJA`, `HUM_ALTA`, `HUM_BAJA` (unidos con `+`) cada vez que cambia el estado. En ThingsBoard se puede crear una regla de alarma cuando `room_alert != "OK"`.
 - Los rangos se cambian en `comfort_limits_t` (valores en decimas de C y % HR).
 - Esto es una ayuda de monitoreo, no un diagnostico clinico.
+
+## Preguntas editables por el cuidador
+
+La propuesta pide preguntas "configuradas por el cuidador". El cuidador las escribe en ThingsBoard y el robot las recibe sin reprogramarlo.
+
+**Como funciona**
+- Atributo compartido `questions` del dispositivo (texto). El robot se suscribe por MQTT (`v1/devices/me/attributes`), asi que un cambio llega en segundos; al conectarse tambien pide el valor actual.
+- Las preguntas validas se guardan en la memoria del robot (NVS): sobreviven a un reinicio y funcionan sin internet.
+- Con preguntas del cuidador activas, CogniGame sortea de **ese** banco; sin ellas usa las 20 incluidas en `game_content.c`.
+- Si el cuidador cambia el texto mientras el paciente juega, el cambio se aplica al cerrar el juego.
+
+**Formato** (una sola linea o varias):
+
+```
+pregunta|respuesta correcta|falsa 1|falsa 2#otra pregunta|correcta|falsa 1|falsa 2
+```
+
+- La respuesta correcta va **siempre primero**; el robot baraja las 3 opciones.
+- Preguntas separadas por `#` o por salto de linea.
+- Tildes y enie se convierten solas (`¿` y `¡` se quitan). La pregunta se parte sola en lineas de 21 letras (maximo 4 lineas).
+- Cada opcion: maximo 17 caracteres y las 3 distintas.
+- De 5 a 20 preguntas validas y maximo 2048 caracteres en total. Las invalidas se descartan.
+- Texto vacio = volver al banco incluido.
+
+Ejemplo:
+
+```
+Cual fue mi regalo mas querido?|Una bicicleta|Un reloj|Un libro#Como se llama mi mascota?|Rocky|Firulais|Michi#Donde naci?|Guayaquil|Quito|Cuenca#Como se llama mi pareja?|Elena|Rosa|Marta#En que trabaje?|Docente|Comerciante|Enfermero
+```
+
+**En ThingsBoard**
+1. Rapido: Devices -> Pulsera ALBA -> Attributes -> **Shared attributes** -> Add -> clave `questions`, tipo String, pegar el texto -> Add.
+2. Con widget (para el dashboard del cuidador): widget de entrada "Update multiple attributes" (o "Update shared attribute"), entidad = el dispositivo, clave `questions`, ambito **Shared attribute**, tipo texto.
+
+**Confirmacion en el dashboard**: el robot publica `q_count` (preguntas del cuidador activas; 0 = banco incluido) y `q_rejected` (entradas descartadas). Si `q_rejected` > 0 hay que revisar el formato. Con menos de 5 validas el robot conserva el banco anterior. El detalle sale por el serial: `[preguntas] ...`.
+
+**Limite**: el atributo viaja por MQTT sin cifrar si `CLOUD_TB_TLS` es 0; no pongas datos que no quieras exponer en una red compartida. Los datos reales del paciente deben usarse con su familia y su consentimiento.
+

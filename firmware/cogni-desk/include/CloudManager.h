@@ -2,6 +2,7 @@
 #define CLOUD_MANAGER_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "SensorManager.h"
@@ -25,6 +26,13 @@ void cloudOnComfort(const char *text);
 
 /* Llamar en cada vuelta del loop: encola temperatura/humedad (cada 30 s) y el resultado del juego. */
 void actualizarCloud(uint32_t now_ms, const environment_reading_t *ambiente, const game_result_t *juego);
+
+/* Preguntas del cuidador: el atributo compartido `questions` de ThingsBoard llega por MQTT.
+ * cloudTakeQuestions() entrega el texto nuevo una sola vez (true) para que QuestionManager lo aplique;
+ * cloudOnQuestions() publica cuantas preguntas quedaron activas (0 = banco incluido) y cuantas
+ * entradas se descartaron (q_count / q_rejected). */
+bool cloudTakeQuestions(char *out, size_t cap);
+void cloudOnQuestions(uint8_t active, uint8_t rejected);
 
 bool cloudConectado(void);
 

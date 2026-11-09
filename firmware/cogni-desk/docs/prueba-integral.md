@@ -54,6 +54,15 @@ Copiar si falla: lineas `[radio]` de la pulsera y `[diag]` + `[wifi]` del robot 
 3. Al volver al rango se imprime `[ambiente] estado: OK` y en ThingsBoard `room_alert` pasa a `OK`.
 4. La pantalla de ambiente del menu debe decir `Confort: OK` o `FUERA DE RANGO`.
 
+## 4d. Preguntas del cuidador
+
+1. En ThingsBoard, Pulsera ALBA -> Attributes -> Shared attributes -> agregar `questions` (String) con 5 o mas preguntas en el formato de `integracion-robot.md`.
+2. Serial del robot: `[nube] preguntas del cuidador recibidas (N caracteres)` y `[preguntas] N preguntas del cuidador activas (0 descartadas)`. En Latest telemetry: `q_count` = N, `q_rejected` = 0.
+3. Abrir CogniGame: las preguntas salen de las que escribio el cuidador, con las opciones en orden distinto cada vez.
+4. Reiniciar el robot **sin Wi-Fi**: al arrancar imprime `[preguntas] N preguntas del cuidador activas` (quedaron guardadas).
+5. Poner `questions` vacio: `[preguntas] banco incluido en el robot` y `q_count` = 0.
+6. Probar un error: escribir una opcion de mas de 17 letras. `q_rejected` sube y esa pregunta no se usa.
+
 ## 5. Nube (ThingsBoard)
 
 1. Robot: `[nube] conectado a ThingsBoard` y lineas `[nube] -> {...}`.

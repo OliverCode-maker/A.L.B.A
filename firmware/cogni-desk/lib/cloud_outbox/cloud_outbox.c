@@ -105,6 +105,14 @@ void cloud_outbox_push_comfort(cloud_outbox_t *o, uint64_t epoch_ms, const char 
     if (w > 0 && (size_t)w < sizeof vals) push_values(o, epoch_ms, vals, true);
 }
 
+void cloud_outbox_push_questions(cloud_outbox_t *o, uint64_t epoch_ms, uint8_t loaded, uint8_t rejected)
+{
+    char vals[48];
+    const int w = snprintf(vals, sizeof vals, "\"q_count\":%u,\"q_rejected\":%u",
+                           (unsigned)loaded, (unsigned)rejected);
+    if (w > 0 && (size_t)w < sizeof vals) push_values(o, epoch_ms, vals, true);
+}
+
 void cloud_outbox_push_game(cloud_outbox_t *o, uint64_t epoch_ms, uint8_t score, uint8_t total,
                             uint32_t avg_ms)
 {

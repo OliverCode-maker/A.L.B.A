@@ -11,6 +11,7 @@
 #include "ClockManager.h"
 #include "BuzzerManager.h"
 #include "CloudManager.h"
+#include "QuestionManager.h"
 #include "comfort.h"
 
 static desk_app_t app;
@@ -91,6 +92,7 @@ void setup() {
     if (!initCommunication()) {
         Serial.println(F("ESP-NOW no disponible; interfaz y DHT11 siguen activos."));
     }
+    initQuestions();   // preguntas del cuidador guardadas (antes de abrir el juego)
     initCloud();
     if (!initWifiManager()) {
         Serial.println(F("Wi-Fi no pudo iniciar completamente; interfaz local sigue activa."));
@@ -125,6 +127,7 @@ void loop() {
     actualizarClockManager(&app, now_ms);
 
     const desk_view_t view = desk_app_view(&app);
+    actualizarQuestions(view.screen == DESK_SCREEN_GAME);
     actualizarBuzzer(patronBuzzer(view.screen), now_ms);
     const health_reading_t salud = leerSalud(now_ms);
     const cloud_alert_show_t aviso =

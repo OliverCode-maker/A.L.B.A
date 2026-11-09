@@ -53,6 +53,9 @@ bool game_orientation_build(const game_clock_t *clock, uint8_t kind, uint8_t var
 /* Banco de preguntas (game_content.c). */
 uint8_t game_content_count(void);
 const game_question_t *game_content_get(uint8_t index);
+/* Reemplaza el banco incluido por uno del cuidador (el arreglo debe seguir vivo).
+ * list = NULL o count = 0 vuelve al banco incluido. Llamar solo con el juego cerrado. */
+void game_content_set_custom(const game_question_t *list, uint8_t count);
 
 typedef enum {
     GAME_STATE_IDLE = 0,
