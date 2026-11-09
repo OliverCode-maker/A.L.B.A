@@ -179,6 +179,12 @@ void cloudOnEvent(const alba_event_t *event) {
   give();
 }
 
+void cloudOnComfort(const char *text) {
+  if (!enabled || text == nullptr || !take()) return;
+  cloud_outbox_push_comfort(&outbox, epochMs(), text);
+  give();
+}
+
 void actualizarCloud(uint32_t now_ms, const environment_reading_t *ambiente,
                      const game_result_t *juego) {
   if (!enabled) return;

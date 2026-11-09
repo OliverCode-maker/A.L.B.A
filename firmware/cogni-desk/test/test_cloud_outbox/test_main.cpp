@@ -71,6 +71,24 @@ void test_environment_json_and_invalid_values(void)
     TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)cloud_outbox_count(&o));
 }
 
+void test_comfort_state_is_published_as_room_alert(void)
+{
+    cloud_outbox_push_comfort(&o, 0u, "TEMP_ALTA+HUM_BAJA");
+    TEST_ASSERT_EQUAL_STRING("{\"room_alert\":\"TEMP_ALTA+HUM_BAJA\"}", cloud_outbox_peek(&o));
+    cloud_outbox_pop(&o);
+    cloud_outbox_push_comfort(&o, 0u, "OK");
+    TEST_ASSERT_EQUAL_STRING("{\"room_alert\":\"OK\"}", cloud_outbox_peek(&o));
+    cloud_outbox_pop(&o);
+}
+
+void test_comfort_state_rejects_unsafe_text(void)
+{
+    cloud_outbox_push_comfort(&o, 0u, "x\"y");
+    cloud_outbox_push_comfort(&o, 0u, "");
+    cloud_outbox_push_comfort(&o, 0u, nullptr);
+    TEST_ASSERT_EQUAL_UINT32(0u, (uint32_t)cloud_outbox_count(&o));
+}
+
 void test_game_result_json_rounds_average_to_seconds(void)
 {
     cloud_outbox_push_game(&o, 0u, 4u, 5u, 6400u);
@@ -222,5 +240,7 @@ int main(void)
     RUN_TEST(test_other_alerts_do_not_change_the_fall_status);
     RUN_TEST(test_pending_fall_dropped_from_a_full_queue_is_lost);
     RUN_TEST(test_alert_show_combines_status_cloud_and_network);
+    RUN_TEST(test_comfort_state_is_published_as_room_alert);
+    RUN_TEST(test_comfort_state_rejects_unsafe_text);
     return UNITY_END();
 }

@@ -289,6 +289,54 @@ void test_repeated_wake_is_ignored_for_thirty_minutes(void)
     TEST_ASSERT_TRUE(desk_app_on_wake(&app, 10000u + DESK_WAKE_COOLDOWN_MS));
 }
 
+void test_comfort_alert_shows_values_and_ok_returns_to_idle(void)
+{
+    go_idle();
+    TEST_ASSERT_TRUE(desk_app_show_comfort_alert(&app, 2u, 372, 45u));
+    desk_view_t v = desk_app_view(&app);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_COMFORT, v.screen);
+    TEST_ASSERT_EQUAL_UINT8(2u, v.comfort_flags);
+    TEST_ASSERT_EQUAL_INT16(372, v.comfort_temp_x10);
+    TEST_ASSERT_EQUAL_UINT8(45u, v.comfort_hum);
+
+    TEST_ASSERT_TRUE(desk_app_show_comfort_alert(&app, 6u, 380, 50u));   // actualiza
+    TEST_ASSERT_EQUAL_INT16(380, desk_app_view(&app).comfort_temp_x10);
+
+    desk_app_on_input(&app, DESK_INPUT_OK, 2000u, nullptr);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_IDLE, desk_app_view(&app).screen);
+}
+
+void test_comfort_alert_does_not_interrupt_fall_medication_wake_or_game(void)
+{
+    go_idle();
+    alba_event_t event;
+    alba_pack_event(&event, 12u, 1000u, ALBA_ALERTA_CAIDA_DETECTADA, 3900u, ALBA_CONF_PENDIENTE);
+    desk_app_on_fall_event(&app, &event, 1000u, nullptr);
+    TEST_ASSERT_FALSE(desk_app_show_comfort_alert(&app, 1u, 100, 50u));
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_FALL_PROMPT, desk_app_view(&app).screen);
+
+    desk_app_init(&app, 0u);
+    go_idle();
+    TEST_ASSERT_TRUE(desk_app_show_medication_alarm(&app, 0u));
+    TEST_ASSERT_FALSE(desk_app_show_comfort_alert(&app, 1u, 100, 50u));
+
+    desk_app_init(&app, 0u);
+    go_idle();
+    TEST_ASSERT_TRUE(desk_app_on_wake(&app, 10000u));
+    TEST_ASSERT_FALSE(desk_app_show_comfort_alert(&app, 1u, 100, 50u));
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_WAKE, desk_app_view(&app).screen);
+}
+
+void test_fall_interrupts_the_comfort_alert(void)
+{
+    go_idle();
+    TEST_ASSERT_TRUE(desk_app_show_comfort_alert(&app, 2u, 372, 45u));
+    alba_event_t event;
+    alba_pack_event(&event, 12u, 1000u, ALBA_ALERTA_CAIDA_DETECTADA, 3900u, ALBA_CONF_PENDIENTE);
+    desk_app_on_fall_event(&app, &event, 1000u, nullptr);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_FALL_PROMPT, desk_app_view(&app).screen);
+}
+
 void test_wake_does_not_interrupt_a_fall_or_medication_or_the_game(void)
 {
     go_idle();
@@ -356,6 +404,9 @@ int main(int, char **)
     RUN_TEST(test_repeated_wake_is_ignored_for_thirty_minutes);
     RUN_TEST(test_wake_does_not_interrupt_a_fall_or_medication_or_the_game);
     RUN_TEST(test_fall_interrupts_the_wake_screen);
+    RUN_TEST(test_comfort_alert_shows_values_and_ok_returns_to_idle);
+    RUN_TEST(test_comfort_alert_does_not_interrupt_fall_medication_wake_or_game);
+    RUN_TEST(test_fall_interrupts_the_comfort_alert);
     RUN_TEST(test_invalid_date_is_rejected);
     return UNITY_END();
 }

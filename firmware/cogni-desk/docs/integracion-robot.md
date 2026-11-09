@@ -296,3 +296,14 @@ Si el robot tiene hora NTP, cada ronda empieza con 3 preguntas de orientacion ar
 3. Que momento del dia es ahora (Manana 5-11 h, Tarde 12-18 h, Noche 19-4 h)
 
 Siempre 3 opciones cerradas (botones IZQ / OK / DER). Las opciones falsas son dias, fechas y momentos validos y distintos entre si, y la posicion de la correcta cambia entre rondas. Sin hora NTP la ronda usa solo el banco de preguntas.
+
+## Alerta de ambiente fuera de confort
+
+La propuesta pide una alerta cuando el DHT sale del rango de confort (operacion 15-35 C y 20-80 % de humedad relativa).
+
+- `lib/comfort` clasifica cada muestra del DHT con esos rangos (`comfort_default_limits()`), con **histeresis** (1 C / 3 %) y **30 s sostenido** para no alertar por un pico aislado. Se vuelve a avisar cada 30 min si el ambiente sigue mal.
+- Al salir del rango el robot muestra la pantalla **AMBIENTE** (temperatura/humedad alta o baja con los valores), suena el buzzer (patron propio, maximo 8 s) y **OK** la cierra. No interrumpe una caida, el medicamento, el despertar ni una partida; una caida si interrumpe esta pantalla.
+- La pantalla de ambiente (menu) muestra `Confort: OK` o `FUERA DE RANGO`.
+- A la nube va la clave **`room_alert`** con el texto `OK`, `TEMP_ALTA`, `TEMP_BAJA`, `HUM_ALTA`, `HUM_BAJA` (unidos con `+`) cada vez que cambia el estado. En ThingsBoard se puede crear una regla de alarma cuando `room_alert != "OK"`.
+- Los rangos se cambian en `comfort_limits_t` (valores en decimas de C y % HR).
+- Esto es una ayuda de monitoreo, no un diagnostico clinico.

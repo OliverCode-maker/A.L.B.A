@@ -3,6 +3,7 @@
 #include "DisplaysManager.h"
 #include "CloudManager.h"
 #include "DeskConfig.h"
+#include "comfort.h"
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -358,7 +359,29 @@ void mostrarVista(const desk_view_t *vista, const environment_reading_t *ambient
       snprintf(value, sizeof(value), "Humedad: %.0f%%", ambiente->humidity_pct);
       escribirLinea(oledDerecho, 24, value);
     }
+    if (ambiente != nullptr && ambiente->valid) {
+      const comfort_limits_t limites = comfort_default_limits();
+      const uint8_t fuera = comfort_classify(
+          &limites, static_cast<int16_t>(lroundf(ambiente->temperature_c * 10.0f)),
+          static_cast<uint8_t>(ambiente->humidity_pct + 0.5f));
+      escribirLinea(oledIzquierdo, 40, fuera == 0u ? "Confort: OK" : "FUERA DE RANGO");
+    }
     escribirLinea(oledDerecho, 48, "IZQ: Volver");
+  } else if (vista->screen == DESK_SCREEN_COMFORT) {
+    // Termometro en el OLED izquierdo.
+    oledIzquierdo.drawRoundRect(58, 4, 12, 40, 5, SSD1306_WHITE);
+    oledIzquierdo.fillCircle(64, 50, 10, SSD1306_WHITE);
+    oledIzquierdo.fillRect(62, 18, 4, 30, SSD1306_WHITE);
+    escribirLinea(oledDerecho, 2, "AMBIENTE");
+    int y = 16;
+    if ((vista->comfort_flags & COMFORT_TEMP_HIGH) != 0u) { escribirLinea(oledDerecho, y, "Temperatura alta"); y += 12; }
+    if ((vista->comfort_flags & COMFORT_TEMP_LOW) != 0u)  { escribirLinea(oledDerecho, y, "Temperatura baja"); y += 12; }
+    if ((vista->comfort_flags & COMFORT_HUM_HIGH) != 0u)  { escribirLinea(oledDerecho, y, "Humedad alta"); y += 12; }
+    if ((vista->comfort_flags & COMFORT_HUM_LOW) != 0u)   { escribirLinea(oledDerecho, y, "Humedad baja"); y += 12; }
+    oledDerecho.setCursor(4, 42);
+    oledDerecho.printf("%.1f C  %u%%", static_cast<double>(vista->comfort_temp_x10) / 10.0,
+                       static_cast<unsigned>(vista->comfort_hum));
+    escribirLinea(oledDerecho, 54, "OK: Entendido");
   } else if (vista->screen == DESK_SCREEN_GAME) {
     const game_view_t &juego = vista->game;
     static const char *const prefijos[GAME_OPTIONS] = {"IZQ ", "OK  ", "DER "};

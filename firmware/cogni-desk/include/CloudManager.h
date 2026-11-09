@@ -20,6 +20,9 @@ bool initCloud(void);
 void cloudOnTelemetry(const alba_telemetry_t *telemetry);
 void cloudOnEvent(const alba_event_t *event);
 
+/* El ambiente salio del rango de confort (o volvio): texto de comfort_describe(), p. ej. "TEMP_ALTA". */
+void cloudOnComfort(const char *text);
+
 /* Llamar en cada vuelta del loop: encola temperatura/humedad (cada 30 s) y el resultado del juego. */
 void actualizarCloud(uint32_t now_ms, const environment_reading_t *ambiente, const game_result_t *juego);
 
