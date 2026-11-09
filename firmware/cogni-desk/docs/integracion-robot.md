@@ -196,3 +196,22 @@ En el PC, sin placa:
 - `cd firmware/cogni-desk && pio test -e native` (32 pruebas del enlace y del asistente de caidas).
 - `cd firmware/cogni-band && pio test -e native -f test_robot_roundtrip` (pulsera y robot juntos: caida, cancelar,
   cancelar perdido en el aire, duplicados, hora).
+
+## Nube (ThingsBoard)
+
+El robot publica por MQTT a ThingsBoard desde `CloudManager` (tarea FreeRTOS en el nucleo 0, no bloquea botones, pantallas ni buzzer).
+
+| Origen | Claves en ThingsBoard |
+|---|---|
+| Telemetria de la pulsera | `bpm`, `spo2`, `bateria`, ... (ver `alba_thingsboard.h`) |
+| Evento de la pulsera (caida) | alerta, valor pico, confirmacion |
+| DHT11 del robot (cada 30 s) | `room_temp` (°C), `room_hum` (%) |
+| CogniGame, al terminar una ronda | `game_score`, `game_total`, `game_avg_s` |
+
+Configuracion (una sola vez por computador):
+
+1. Copiar `firmware/cogni-desk/include/cloud_secrets.example.h` como `cloud_secrets.h` (esta en `.gitignore`, no se sube).
+2. Completar host, puerto, TLS y el **token** del dispositivo (ThingsBoard -> Devices -> Pulsera ALBA -> Copy access token).
+3. Compilar y subir. Sin `cloud_secrets.h` la nube queda desactivada y lo demas funciona igual.
+
+Detalles: cola de 16 mensajes en RAM (sin red descarta primero telemetria antigua y conserva las alertas); si el robot ya tiene hora NTP los mensajes llevan `ts`, si no, ThingsBoard usa la hora de llegada; TLS usa `setInsecure()` (cifra pero no verifica el servidor: solo pruebas).

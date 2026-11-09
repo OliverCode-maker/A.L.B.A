@@ -13,7 +13,7 @@ class TestFormato(unittest.TestCase):
                          '{"ts":1793016003000,"values":{"bpm":62,"spo2":97,"bat":84}}')
 
     def test_sin_ts_se_omite(self):
-        self.assertEqual(s.telemetria(62, 97, 84), '{"values":{"bpm":62,"spo2":97,"bat":84}}')
+        self.assertEqual(s.telemetria(62, 97, 84), '{"bpm":62,"spo2":97,"bat":84}')
 
     def test_claves_invalidas_se_omiten(self):
         self.assertEqual(s.telemetria(None, 97, 84, 5), '{"ts":5,"values":{"spo2":97,"bat":84}}')
@@ -38,7 +38,8 @@ class TestFormato(unittest.TestCase):
         textos = [armar(1793016000000) for _, armar in s.escenario()]
         vistos = set()
         for t in textos:
-            v = json.loads(t)["values"]
+            j = json.loads(t)
+            v = j.get("values", j)   # con hora viene dentro de "values"; sin hora, plano
             vistos.add(v.get("alert", "telemetria"))
             vistos.add(v.get("confirm", "-"))
         for esperado in ("telemetria", "CAIDA_DETECTADA", "BATERIA_BAJA", "VIGILIA_TRIGGER",

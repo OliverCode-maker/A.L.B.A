@@ -8,6 +8,7 @@
 #include "WifiManager.h"
 #include "ClockManager.h"
 #include "BuzzerManager.h"
+#include "CloudManager.h"
 
 static desk_app_t app;
 static desk_view_t last_view;
@@ -54,6 +55,7 @@ void setup() {
     if (!initCommunication()) {
         Serial.println(F("ESP-NOW no disponible; interfaz y DHT11 siguen activos."));
     }
+    initCloud();
     if (!initWifiManager()) {
         Serial.println(F("Wi-Fi no pudo iniciar completamente; interfaz local sigue activa."));
     }
@@ -67,6 +69,9 @@ void loop() {
     actualizarWifiManager(now_ms);
     const bool new_environment_sample = actualizarSensores(now_ms);
     procesarComunicacionesBackground(&app, now_ms);
+    const environment_reading_t ambiente_actual = leerAmbiente();
+    const game_result_t resultado_juego = desk_app_game_result(&app);
+    actualizarCloud(now_ms, &ambiente_actual, &resultado_juego);
 
     const button_event_t event = actualizarBotones(now_ms);
     uint16_t ref_seq = 0u;

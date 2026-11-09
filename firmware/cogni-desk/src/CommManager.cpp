@@ -8,6 +8,7 @@
 #include <freertos/queue.h>
 #include <string.h>
 
+#include "CloudManager.h"
 #include "DeskConfig.h"
 #include "robot_link.h"
 
@@ -69,6 +70,7 @@ void handleReceivedPacket(desk_app_t *app, const ReceivedPacket &packet, uint32_
     last_health.bat_pct = message.tel.bateria_pct;
     last_health_ms = now_ms;
     health_seen = true;
+    cloudOnTelemetry(&message.tel);
     Serial.printf("[pulsera] BPM=%u SpO2=%u bateria=%u%%\n",
                   static_cast<unsigned>(message.tel.bpm),
                   static_cast<unsigned>(message.tel.spo2),
@@ -80,6 +82,7 @@ void handleReceivedPacket(desk_app_t *app, const ReceivedPacket &packet, uint32_
                 static_cast<unsigned>(message.evt.alerta_tipo),
                 static_cast<unsigned>(message.evt.confirmacion),
                 static_cast<unsigned>(message.evt.hdr.seq));
+  cloudOnEvent(&message.evt);
   ejecutarAccionRobot(
       desk_app_on_fall_event(app, &message.evt, now_ms, nullptr), 0u);
 }

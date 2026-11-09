@@ -53,10 +53,8 @@ def evento(alerta, confirm, valor, ts_ms=None):
 
 
 def _con_ts(values, ts_ms):
-    msg = {}
-    if ts_ms:
-        msg["ts"] = ts_ms
-    msg["values"] = values
+    # Con hora: {"ts":..,"values":{..}}. Sin hora: JSON plano, como el codigo C.
+    msg = {"ts": ts_ms, "values": values} if ts_ms else values
     return json.dumps(msg, separators=(",", ":"))       # sin espacios, como el codigo C
 
 
