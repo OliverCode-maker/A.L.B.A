@@ -7,7 +7,7 @@ Guia para probar en hardware todo lo agregado: Salud, buzzer, CogniGame, nube, c
 | Quien | Tarea |
 |---|---|
 | Ambos | `git pull` de la rama `feat/robot-salud-juego` (con los parches de nube, canal, hora y estado del aviso). |
-| Gaby | En `firmware/cogni-band/platformio.ini` cambiar `-DBAND_COMM_MODE=BAND_COMM_MODE_WIFI_DEBUG` por `-DBAND_COMM_MODE=BAND_COMM_MODE_ESPNOW`. Compilar y subir. Monitor a 115200. |
+| Gaby | La configuracion normal ya usa `BAND_COMM_MODE_ESPNOW`. Compilar y subir la pulsera. Monitor a 115200. |
 | Oliver | Copiar `firmware/cogni-desk/include/cloud_secrets.example.h` como `cloud_secrets.h` y poner el token del dispositivo "Pulsera ALBA" (ThingsBoard -> Devices -> Copy access token). Compilar y subir. |
 | Ambos | Hotspot del celular en 2.4 GHz, con datos moviles. El robot se configura con ese Wi-Fi (AP `CogniDesk-Setup`). |
 
@@ -16,10 +16,12 @@ Si no compila, pegar el error completo (primeras 30 lineas) al chat.
 ## 1. Enlace pulsera -> robot (sin nube)
 
 1. Encender el robot y despues la pulsera.
-2. Robot debe imprimir `[pulsera] BPM=... SpO2=... bateria=...%` cada ~30 s y, cada 10 s, `[diag] canal=N wifi=si ... recibidos=X perdidos=Y (Z%)`.
+2. Robot debe imprimir `[pulsera] BPM=... SpO2=... bateria=...%` cada ~30 s y, cada 10 s, `[diag] canal=N wifi=si ... recibidos=X perdidos=Y (Z%) duplicados=... cola_drop=...`.
 3. **Resultado a anotar:** el porcentaje de perdidos tras 5 minutos. Meta: menos de 10 %.
 
 Falla comun: la pulsera sigue en `WIFI_DEBUG` (no aparece `[esp-now] listo` en su serial).
+La pulsera reintenta cada paquete hasta 4 veces si no recibe ACK de radio; los reenvios llevan el
+mismo numero de secuencia y el robot descarta duplicados.
 
 ## 2. Canal automatico
 

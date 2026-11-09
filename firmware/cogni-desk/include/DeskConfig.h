@@ -5,7 +5,7 @@
 #define DESK_BUTTON_RIGHT_GPIO      5u
 #define DESK_BUTTON_OK_GPIO         6u
 
-#define DESK_DHT11_DATA_GPIO        7u
+#define DESK_DHT11_DATA_GPIO       15u
 #define DESK_DHT11_SAMPLE_INTERVAL_MS 2000u
 
 #define DESK_OLED_LEFT_SDA_GPIO     8u

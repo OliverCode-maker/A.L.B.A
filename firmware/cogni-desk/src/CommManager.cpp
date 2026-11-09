@@ -12,11 +12,10 @@
 
 #include "CloudManager.h"
 #include "DeskConfig.h"
-#include "link_stats.h"
 #include "robot_link.h"
 
 namespace {
-constexpr size_t RX_QUEUE_LENGTH = 4;
+constexpr size_t RX_QUEUE_LENGTH = 16;
 
 struct ReceivedPacket {
   uint8_t length;
@@ -27,7 +26,6 @@ const uint8_t band_mac[ESP_NOW_ETH_ALEN] = DESK_BAND_STA_MAC;
 const uint8_t expected_sta_mac[ESP_NOW_ETH_ALEN] = DESK_EXPECTED_STA_MAC;
 QueueHandle_t rx_queue;
 robot_link_t link_state;
-link_stats_t stats;
 uint32_t last_diag_ms;
 
 // Envio de la HORA a la pulsera: solo cuenta como enviada si la radio de la pulsera devuelve el ACK.
@@ -134,9 +132,6 @@ void handleReceivedPacket(desk_app_t *app, const ReceivedPacket &packet, uint32_
     return;
   }
 
-  link_stats_on_seq(&stats, message.type == ALBA_MSG_TELEMETRIA ? message.tel.hdr.seq
-                                                                : message.evt.hdr.seq);
-
   if (message.type == ALBA_MSG_TELEMETRIA) {
     last_health.bpm_valid = message.tel.bpm != ALBA_BPM_INVALID;
     last_health.bpm = message.tel.bpm;
@@ -174,7 +169,6 @@ void handleReceivedPacket(desk_app_t *app, const ReceivedPacket &packet, uint32_
 
 bool initCommunication(void) {
   robot_link_init(&link_state);
-  link_stats_init(&stats);
   rx_queue = xQueueCreate(RX_QUEUE_LENGTH, sizeof(ReceivedPacket));
   if (rx_queue == nullptr) {
     Serial.println(F("[esp-now] no se pudo crear la cola de recepcion"));
@@ -233,14 +227,22 @@ void procesarComunicacionesBackground(desk_app_t *app, uint32_t now_ms) {
     uint8_t primary = 0u;
     wifi_second_chan_t second = WIFI_SECOND_CHAN_NONE;
     esp_wifi_get_channel(&primary, &second);
-    Serial.printf("[diag] canal=%u wifi=%s nube=%s recibidos=%lu perdidos=%lu (%u%%) reinicios_pulsera=%lu\n",
+    const uint32_t received = link_state.rx_new;
+    const uint32_t lost = link_state.rx_lost;
+    const uint32_t total = received + lost;
+    const unsigned loss_pct = total == 0u ? 0u :
+        static_cast<unsigned>((static_cast<uint64_t>(lost) * 100u + total / 2u) / total);
+    Serial.printf("[diag] canal=%u wifi=%s nube=%s recibidos=%lu perdidos=%lu (%u%%) duplicados=%lu invalidos=%lu cola_drop=%lu reinicios_pulsera=%lu\n",
                   static_cast<unsigned>(primary),
                   WiFi.status() == WL_CONNECTED ? "si" : "no",
                   cloudConectado() ? "si" : "no",
-                  static_cast<unsigned long>(stats.received),
-                  static_cast<unsigned long>(stats.lost),
-                  static_cast<unsigned>(link_stats_loss_pct(&stats)),
-                  static_cast<unsigned long>(stats.resets));
+                  static_cast<unsigned long>(received),
+                  static_cast<unsigned long>(lost),
+                  loss_pct,
+                  static_cast<unsigned long>(link_state.rx_duplicate),
+                  static_cast<unsigned long>(link_state.rx_invalid),
+                  static_cast<unsigned long>(__atomic_load_n(&dropped_packets, __ATOMIC_RELAXED)),
+                  static_cast<unsigned long>(link_state.band_reboots));
   }
 
   const uint32_t dropped = __atomic_load_n(&dropped_packets, __ATOMIC_RELAXED);

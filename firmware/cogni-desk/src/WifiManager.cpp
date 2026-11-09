@@ -10,12 +10,19 @@
 
 namespace {
 constexpr size_t EEPROM_SIZE = 512u;
-constexpr size_t CREDENTIAL_FIELD_SIZE = 50u;
+constexpr size_t CREDENTIAL_FIELD_SIZE = 64u;
+constexpr size_t LEGACY_CREDENTIAL_FIELD_SIZE = 50u;
 constexpr int SSID_SLOT_0 = 0;
-constexpr int SSID_SLOT_1 = 50;
-constexpr int PASSWORD_SLOT_0 = 100;
-constexpr int PASSWORD_SLOT_1 = 150;
-constexpr int CREDENTIAL_MARKER = 300;
+constexpr int SSID_SLOT_1 = 64;
+constexpr int PASSWORD_SLOT_0 = 128;
+constexpr int PASSWORD_SLOT_1 = 192;
+constexpr int LEGACY_SSID_SLOT_0 = 0;
+constexpr int LEGACY_SSID_SLOT_1 = 50;
+constexpr int LEGACY_PASSWORD_SLOT_0 = 100;
+constexpr int LEGACY_PASSWORD_SLOT_1 = 150;
+constexpr int LEGACY_CREDENTIAL_MARKER = 300;
+constexpr int CREDENTIAL_FORMAT_MARKER = 320;
+constexpr int CREDENTIAL_PREFERRED_MARKER = 322;
 constexpr uint32_t CONNECTION_TIMEOUT_MS = 15000u;
 constexpr uint32_t AP_SUCCESS_GRACE_MS = 5000u;
 constexpr char AP_SSID[] = "CogniDesk-Setup";
@@ -59,9 +66,9 @@ int passwordOffset(int slot) {
   return slot == 0 ? PASSWORD_SLOT_0 : PASSWORD_SLOT_1;
 }
 
-bool readEepromString(int offset, String &value) {
+bool readEepromString(int offset, size_t field_size, String &value) {
   value = "";
-  for (size_t i = 0u; i < CREDENTIAL_FIELD_SIZE; ++i) {
+  for (size_t i = 0u; i < field_size; ++i) {
     const uint8_t byte_value = EEPROM.read(offset + static_cast<int>(i));
     if (byte_value == 0u) return true;
     if (byte_value == 0xFFu) return false;
@@ -70,15 +77,25 @@ bool readEepromString(int offset, String &value) {
   return false;
 }
 
-bool readCredentials(int slot, Credentials &credentials) {
-  return readEepromString(ssidOffset(slot), credentials.ssid) &&
+bool readCredentials(int slot, size_t field_size, int ssid_slot_0,
+                     int ssid_slot_1, int password_slot_0,
+                     int password_slot_1, Credentials &credentials) {
+  const int ssid_offset = slot == 0 ? ssid_slot_0 : ssid_slot_1;
+  const int password_offset = slot == 0 ? password_slot_0 : password_slot_1;
+  return readEepromString(ssid_offset, field_size, credentials.ssid) &&
          !credentials.ssid.isEmpty() &&
-         readEepromString(passwordOffset(slot), credentials.password);
+         readEepromString(password_offset, field_size, credentials.password);
 }
 
-bool writeEepromString(int offset, const String &value) {
-  if (value.length() >= CREDENTIAL_FIELD_SIZE) return false;
-  for (size_t i = 0u; i < CREDENTIAL_FIELD_SIZE; ++i) {
+bool readCredentials(int slot, Credentials &credentials) {
+  return readCredentials(slot, CREDENTIAL_FIELD_SIZE, SSID_SLOT_0,
+                         SSID_SLOT_1, PASSWORD_SLOT_0, PASSWORD_SLOT_1,
+                         credentials);
+}
+
+bool writeEepromString(int offset, size_t field_size, const String &value) {
+  if (value.length() >= field_size) return false;
+  for (size_t i = 0u; i < field_size; ++i) {
     const uint8_t byte_value = i < value.length()
                                    ? static_cast<uint8_t>(value[i])
                                    : 0u;
@@ -89,20 +106,56 @@ bool writeEepromString(int offset, const String &value) {
 
 bool saveCredentials(int slot, const Credentials &credentials) {
   if (!eeprom_ready ||
-      !writeEepromString(ssidOffset(slot), credentials.ssid) ||
-      !writeEepromString(passwordOffset(slot), credentials.password)) {
+      !writeEepromString(ssidOffset(slot), CREDENTIAL_FIELD_SIZE,
+                         credentials.ssid) ||
+      !writeEepromString(passwordOffset(slot), CREDENTIAL_FIELD_SIZE,
+                         credentials.password)) {
     return false;
   }
 
-  EEPROM.write(CREDENTIAL_MARKER, slot == 1 ? 'a' : 'b');
-  EEPROM.write(CREDENTIAL_MARKER + 1, 0u);
+  EEPROM.write(CREDENTIAL_PREFERRED_MARKER, slot == 1 ? 'a' : 'b');
   return EEPROM.commit();
 }
 
 int preferredSlot() {
-  const uint8_t marker = EEPROM.read(CREDENTIAL_MARKER);
+  const uint8_t marker = EEPROM.read(CREDENTIAL_PREFERRED_MARKER);
   if (marker == 'a') return 1;
   return 0;
+}
+
+bool initializeCredentialStorage() {
+  if (EEPROM.read(CREDENTIAL_FORMAT_MARKER) == 'W' &&
+      EEPROM.read(CREDENTIAL_FORMAT_MARKER + 1) == '2') {
+    return true;
+  }
+
+  Credentials legacy_credentials[2];
+  const bool legacy_valid[2] = {
+      readCredentials(0, LEGACY_CREDENTIAL_FIELD_SIZE, LEGACY_SSID_SLOT_0,
+                      LEGACY_SSID_SLOT_1, LEGACY_PASSWORD_SLOT_0,
+                      LEGACY_PASSWORD_SLOT_1, legacy_credentials[0]),
+      readCredentials(1, LEGACY_CREDENTIAL_FIELD_SIZE, LEGACY_SSID_SLOT_0,
+                      LEGACY_SSID_SLOT_1, LEGACY_PASSWORD_SLOT_0,
+                      LEGACY_PASSWORD_SLOT_1, legacy_credentials[1])};
+  const uint8_t legacy_preferred =
+      EEPROM.read(LEGACY_CREDENTIAL_MARKER) == 'a' ? 'a' : 'b';
+
+  for (int slot = 0; slot < 2; ++slot) {
+    if (!legacy_valid[slot]) continue;
+    if (!writeEepromString(ssidOffset(slot), CREDENTIAL_FIELD_SIZE,
+                           legacy_credentials[slot].ssid) ||
+        !writeEepromString(passwordOffset(slot), CREDENTIAL_FIELD_SIZE,
+                           legacy_credentials[slot].password)) {
+      return false;
+    }
+  }
+
+  EEPROM.write(CREDENTIAL_FORMAT_MARKER, 'W');
+  EEPROM.write(CREDENTIAL_FORMAT_MARKER + 1, '2');
+  EEPROM.write(CREDENTIAL_PREFERRED_MARKER, legacy_preferred);
+  if (!EEPROM.commit()) return false;
+  Serial.println(F("[wifi] almacenamiento de credenciales actualizado"));
+  return true;
 }
 
 void handleRoot() {
@@ -112,12 +165,16 @@ void handleRoot() {
         "<h2>Configurar Wi-Fi</h2><form method='POST' action='/wifi'>"
         "<label>Red Wi-Fi <input name='ssid' maxlength='32' required></label><br>"
         "<label>Contrasena <input name='password' type='password' "
-        "maxlength='49'></label><br><button>Conectar</button></form>"
+        "maxlength='63'></label><br><button>Conectar</button></form>"
         "<p id='status'>Preparando...</p><script>"
-        "async function refresh(){try{const r=await fetch('/status');"
+        "async function refresh(){try{const r=await fetch('/status?t='+Date.now(),"
+        "{cache:'no-store'});"
         "const s=await r.json();document.getElementById('status').textContent="
         "s.message;}catch(e){}}setInterval(refresh,1500);refresh();"
         "</script></html>");
+  server.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "0");
   server.send(200, "text/html; charset=utf-8", html);
 }
 
@@ -126,6 +183,9 @@ void handleStatus() {
   const String response = String("{\"connected\":") +
                           (connected ? "true" : "false") +
                           ",\"message\":\"" + status_message + "\"}";
+  server.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "0");
   server.send(200, "application/json; charset=utf-8", response);
 }
 
@@ -138,7 +198,7 @@ void handleWifi() {
 
   const String ssid = server.arg("ssid");
   const String password = server.arg("password");
-  if (ssid.isEmpty() || ssid.length() > 32u || password.length() > 49u) {
+  if (ssid.isEmpty() || ssid.length() > 32u || password.length() > 63u) {
     server.send(400, "text/plain; charset=utf-8",
                 "SSID o contrasena fuera del limite permitido.");
     return;
@@ -152,8 +212,10 @@ void handleWifi() {
   attempt_started_ms = millis();
   state = WifiState::kConnectingNew;
   status_message = "Intentando conectar a la nueva red...";
-  server.send(202, "text/plain; charset=utf-8",
-              "Intento iniciado. Esta pagina mostrara el resultado.");
+  Serial.println(F("[wifi] formulario recibido; iniciando conexion STA"));
+  server.sendHeader("Cache-Control", "no-store");
+  server.sendHeader("Location", "/", true);
+  server.send(303, "text/plain; charset=utf-8", "Redirigiendo al estado Wi-Fi.");
 }
 
 void configureServer() {
@@ -261,6 +323,18 @@ void stopProvisioningAp() {
 bool initWifiManager(void) {
   WiFi.persistent(false);
   WiFi.setAutoReconnect(false);
+  WiFi.onEvent([](arduino_event_id_t event, arduino_event_info_t info) {
+    if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+      const wifi_err_reason_t reason =
+          static_cast<wifi_err_reason_t>(info.wifi_sta_disconnected.reason);
+      Serial.printf("[wifi] desconexion: motivo=%u (%s)\n",
+                    static_cast<unsigned>(info.wifi_sta_disconnected.reason),
+                    WiFi.disconnectReasonName(reason));
+    } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+      Serial.printf("[wifi] IP asignada: %s\n",
+                    IPAddress(info.got_ip.ip_info.ip.addr).toString().c_str());
+    }
+  });
   if (!WiFi.mode(WIFI_STA)) {
     Serial.println(F("[wifi] no se pudo activar el modo STA"));
     return false;
@@ -269,6 +343,11 @@ bool initWifiManager(void) {
   eeprom_ready = EEPROM.begin(EEPROM_SIZE);
   if (!eeprom_ready) {
     Serial.println(F("[wifi] EEPROM no disponible; no se guardaran credenciales"));
+    beginProvisioning();
+    return false;
+  }
+  if (!initializeCredentialStorage()) {
+    Serial.println(F("[wifi] no se pudo actualizar el almacenamiento de credenciales"));
     beginProvisioning();
     return false;
   }
@@ -289,7 +368,8 @@ void actualizarWifiManager(uint32_t now_ms) {
   if (state == WifiState::kConnectingSaved) {
     if (WiFi.status() == WL_CONNECTED) {
       acceptSavedConnection(attempt_slot);
-    } else if (now_ms - attempt_started_ms >= CONNECTION_TIMEOUT_MS) {
+    } else if (static_cast<int32_t>(now_ms - attempt_started_ms) >=
+               static_cast<int32_t>(CONNECTION_TIMEOUT_MS)) {
       WiFi.disconnect(false, false);
       tryNextSavedNetwork(now_ms);
     }
@@ -299,11 +379,17 @@ void actualizarWifiManager(uint32_t now_ms) {
   if (state == WifiState::kConnectingNew) {
     if (WiFi.status() == WL_CONNECTED) {
       acceptNewConnection(now_ms);
-    } else if (now_ms - attempt_started_ms >= CONNECTION_TIMEOUT_MS) {
+    } else if (static_cast<int32_t>(now_ms - attempt_started_ms) >=
+               static_cast<int32_t>(CONNECTION_TIMEOUT_MS)) {
+      const uint32_t elapsed_ms = now_ms - attempt_started_ms;
+      const wl_status_t wifi_status = WiFi.status();
       WiFi.disconnect(false, false);
       pending_credentials = Credentials{};
       state = WifiState::kProvisioning;
       status_message = "No se pudo conectar. Verifica los datos e intenta otra vez.";
+      Serial.printf("[wifi] timeout tras %lu ms; estado=%d\n",
+                    static_cast<unsigned long>(elapsed_ms),
+                    static_cast<int>(wifi_status));
     }
     return;
   }

@@ -17,7 +17,7 @@ Las alarmas se configuran desde Reloj y se guardan en NVS; confirmar el aviso co
 cierra y no registra una toma de medicamento.
 
 El mapa de pines confirmado esta centralizado en `include/DeskConfig.h`: botones GPIO 4/5/6,
-DHT11 GPIO 7 y dos buses I2C OLED en GPIO 8/9 y 17/18. El DHT11 se consulta cada 2 segundos al
+DHT11 GPIO 15 y dos buses I2C OLED en GPIO 8/9 y 17/18. El DHT11 se consulta cada 2 segundos al
 abrir "Sensor ambiente"; las lecturas invalidas se muestran como "Sin lectura" y se informan
 una sola vez por fallo continuo.
 
@@ -68,8 +68,8 @@ ronda) para publicarlo a la nube.
 punto de acceso `CogniDesk-Setup`. La clave temporal del AP se imprime por Serial; desde el
 celular se abre `http://192.168.4.1`. El formulario mantiene la interfaz del Desk activa y solo
 reemplaza el espacio de credenciales anterior despues de confirmar una conexion exitosa, por lo
-que un intento fallido no borra la red guardada. El almacenamiento conserva el formato de dos
-espacios de la libreria compartida; por ese formato la clave ingresada admite hasta 49 caracteres.
+que un intento fallido no borra la red guardada. El almacenamiento admite claves WPA de hasta 63
+caracteres y migra automaticamente las credenciales guardadas en el formato anterior.
 
 El router debe estar fijado en canal 1, igual que ESP-NOW en el Desk y la pulsera. El gestor usa
 `WiFi.begin(..., DESK_WIFI_CHANNEL)`. `ClockManager` sincroniza la hora local por NTP en UTC-5;
@@ -237,7 +237,9 @@ Cada 10 s el robot imprime por serial:
 [diag] canal=6 wifi=si nube=si recibidos=42 perdidos=3 (7%) reinicios_pulsera=0
 ```
 
-`perdidos` sale de los saltos del contador `seq` de la pulsera (`lib/link_stats`). Cada 60 s la pulsera imprime:
+`perdidos` sale de los saltos del contador `seq` de la pulsera; se corrige si un paquete atrasado
+llega despues. `duplicados`, `invalidos` y `cola_drop` ayudan a distinguir reintentos de errores
+de validacion o saturacion de la cola. Cada 60 s la pulsera imprime:
 
 ```
 [radio] canal=6 ok=40 sin_ack=5 busquedas=2 cambios=1
@@ -245,7 +247,8 @@ Cada 10 s el robot imprime por serial:
 
 Cuando cambia de canal ademas escribe `[radio] robot encontrado en canal N (antes M)`.
 
-**Importante:** la pulsera debe compilarse con `BAND_COMM_MODE_ESPNOW` (en `platformio.ini` de la pulsera figura `BAND_COMM_MODE_WIFI_DEBUG`, que NO usa ESP-NOW).
+**Importante:** la configuracion normal de la pulsera debe compilarse con `BAND_COMM_MODE_ESPNOW`;
+`BAND_COMM_MODE_WIFI_DEBUG` no usa ESP-NOW.
 
 ## Hora para la pulsera
 

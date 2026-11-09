@@ -65,7 +65,7 @@
 #define BAND_STATS_PERIOD_S       30u
 #else
 #define BAND_TELEMETRY_PERIOD_S   30u
-#define BAND_STATS_PERIOD_S       300u
+#define BAND_STATS_PERIOD_S       60u
 #endif
 
 /* Una lectura de pulso mas vieja que esto se reporta como "sin medicion". */
@@ -78,7 +78,7 @@
 #define BAND_RX_MAX_LEN           16u      /* el mayor mensaje del robot mide 10 B    */
 
 /* ---- Envio -------------------------------------------------------------------*/
-#define BAND_TX_RETRIES           3        /* reintentos de una alerta si esp_now_send falla */
+#define BAND_TX_RETRIES           3        /* reintentos si ESP-NOW no recibe ACK */
 #define BAND_TX_RETRY_DELAY_MS    50u
 
 /* ---- Tareas: prioridad (mayor = mas urgente) y pila en bytes ---------------------*/
