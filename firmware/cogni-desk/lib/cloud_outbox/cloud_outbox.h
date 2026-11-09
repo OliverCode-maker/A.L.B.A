@@ -66,6 +66,8 @@ void cloud_outbox_push_telemetry(cloud_outbox_t *o, const alba_telemetry_t *tel,
 void cloud_outbox_push_event(cloud_outbox_t *o, const alba_event_t *evt, uint64_t epoch_ms);
 /* Temperatura en decimas de grado y humedad en %; los valores invalidos se omiten. */
 void cloud_outbox_push_env(cloud_outbox_t *o, uint64_t epoch_ms, int16_t temp_c_x10, uint8_t hum_pct);
+/* Estado del ambiente respecto al rango de confort: "OK", "TEMP_ALTA", "HUM_BAJA+TEMP_ALTA"... */
+void cloud_outbox_push_comfort(cloud_outbox_t *o, uint64_t epoch_ms, const char *text);
 /* Resultado de una ronda de CogniGame. */
 void cloud_outbox_push_game(cloud_outbox_t *o, uint64_t epoch_ms, uint8_t score, uint8_t total,
                             uint32_t avg_ms);

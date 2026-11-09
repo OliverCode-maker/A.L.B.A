@@ -46,6 +46,9 @@ void desk_app_init(desk_app_t *app, uint32_t now_ms)
     app->date_month = 1u;
     app->wake_seen = false;
     app->wake_last_ms = 0u;
+    app->comfort_flags = 0u;
+    app->comfort_temp_x10 = 0;
+    app->comfort_hum = 0u;
     app->selected_alarm = 0u;
     app->alarm_edit_field = 0u;
     app->medication_alarm_index = 0u;
@@ -109,6 +112,9 @@ robot_action_t desk_app_on_input(desk_app_t *app, desk_input_t input, uint32_t n
 
     switch (app->screen) {
     case DESK_SCREEN_MEDICATION_ALERT:
+        if (input == DESK_INPUT_OK) app->screen = DESK_SCREEN_IDLE;
+        break;
+    case DESK_SCREEN_COMFORT:
         if (input == DESK_INPUT_OK) app->screen = DESK_SCREEN_IDLE;
         break;
     case DESK_SCREEN_WAKE:
@@ -273,6 +279,30 @@ bool desk_app_on_wake(desk_app_t *app, uint32_t now_ms)
     return true;
 }
 
+bool desk_app_show_comfort_alert(desk_app_t *app, uint8_t flags, int16_t temp_x10, uint8_t hum_pct)
+{
+    if (flags == 0u || robot_fall_state(&app->fall) != ROBOT_FALL_IDLE) return false;
+
+    switch (app->screen) {
+    case DESK_SCREEN_IDLE:
+    case DESK_SCREEN_MENU:
+    case DESK_SCREEN_FEATURE:
+    case DESK_SCREEN_ENVIRONMENT:
+    case DESK_SCREEN_CLOCK:
+    case DESK_SCREEN_HEALTH:
+    case DESK_SCREEN_COMFORT:      /* ya mostrandolo: se actualizan los valores */
+        break;
+    default:
+        return false;
+    }
+
+    app->comfort_flags = flags;
+    app->comfort_temp_x10 = temp_x10;
+    app->comfort_hum = hum_pct;
+    app->screen = DESK_SCREEN_COMFORT;
+    return true;
+}
+
 void desk_app_set_alarm(desk_app_t *app, uint8_t index, const desk_alarm_t *alarm)
 {
     if (index >= DESK_ALARM_COUNT || alarm == 0 ||
@@ -305,6 +335,9 @@ desk_view_t desk_app_view(const desk_app_t *app)
     view.alarm_edit_field = app->alarm_edit_field;
     view.medication_alarm_index = app->medication_alarm_index;
     view.game = cogni_game_view(&app->game);
+    view.comfort_flags = app->comfort_flags;
+    view.comfort_temp_x10 = app->comfort_temp_x10;
+    view.comfort_hum = app->comfort_hum;
     for (uint8_t i = 0u; i < DESK_ALARM_COUNT; ++i) {
         view.alarms[i] = app->alarms[i];
     }

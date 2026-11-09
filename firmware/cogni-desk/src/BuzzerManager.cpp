@@ -10,11 +10,13 @@ struct Pattern {
   uint16_t frequency_hz;
   uint16_t on_ms;
   uint16_t off_ms;
+  uint32_t max_ms;   // 0 = suena mientras dure el patron
 };
 
-const Pattern kFall = {2700u, 120u, 120u};
-const Pattern kFallConfirmed = {2000u, 700u, 300u};
-const Pattern kMedication = {2400u, 250u, 1250u};
+const Pattern kFall = {2700u, 120u, 120u, 0u};
+const Pattern kFallConfirmed = {2000u, 700u, 300u, 0u};
+const Pattern kMedication = {2400u, 250u, 1250u, DESK_MEDICATION_BUZZ_MAX_MS};
+const Pattern kComfort = {1800u, 200u, 1800u, 8000u};
 
 buzzer_pattern_t current = BUZZER_PATTERN_OFF;
 uint32_t pattern_started_ms;
@@ -26,6 +28,7 @@ const Pattern *patternData(buzzer_pattern_t pattern) {
   case BUZZER_PATTERN_FALL: return &kFall;
   case BUZZER_PATTERN_FALL_CONFIRMED: return &kFallConfirmed;
   case BUZZER_PATTERN_MEDICATION: return &kMedication;
+  case BUZZER_PATTERN_COMFORT: return &kComfort;
   default: return nullptr;
   }
 }
@@ -55,8 +58,8 @@ void actualizarBuzzer(buzzer_pattern_t pattern, uint32_t now_ms) {
   const Pattern *data = patternData(current);
   if (data == nullptr) return;
 
-  if (current == BUZZER_PATTERN_MEDICATION &&
-      static_cast<uint32_t>(now_ms - pattern_started_ms) >= DESK_MEDICATION_BUZZ_MAX_MS) {
+  if (data->max_ms != 0u &&
+      static_cast<uint32_t>(now_ms - pattern_started_ms) >= data->max_ms) {
     silence();
     return;
   }

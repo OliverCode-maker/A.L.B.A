@@ -37,7 +37,8 @@ typedef enum {
     DESK_SCREEN_FALL_CONFIRMED,
     DESK_SCREEN_HEALTH,
     DESK_SCREEN_GAME,
-    DESK_SCREEN_WAKE
+    DESK_SCREEN_WAKE,
+    DESK_SCREEN_COMFORT
 } desk_screen_t;
 
 /* Despues de un aviso de despertar se ignoran los siguientes (el robot ya esta atendiendo al paciente). */
@@ -61,6 +62,9 @@ typedef struct {
     uint8_t medication_alarm_index;
     desk_alarm_t alarms[DESK_ALARM_COUNT];
     game_view_t game;
+    uint8_t comfort_flags;     /* banderas COMFORT_* mostradas en DESK_SCREEN_COMFORT */
+    int16_t comfort_temp_x10;
+    uint8_t comfort_hum;
 } desk_view_t;
 
 typedef struct {
@@ -82,6 +86,9 @@ typedef struct {
     uint8_t date_month;    /* 1..12 */
     bool wake_seen;
     uint32_t wake_last_ms;
+    uint8_t comfort_flags;
+    int16_t comfort_temp_x10;
+    uint8_t comfort_hum;
     uint32_t alarm_revision;
     desk_alarm_t alarms[DESK_ALARM_COUNT];
     robot_fall_t fall;
@@ -104,6 +111,10 @@ void desk_app_set_date(desk_app_t *app, bool valid, uint8_t wday, uint8_t mday, 
 bool desk_app_on_wake(desk_app_t *app, uint32_t now_ms);
 /* Semilla del sorteo de preguntas (por ejemplo esp_random() al arrancar). */
 void desk_app_seed_game(desk_app_t *app, uint32_t seed);
+/* Ambiente fuera del rango de confort: muestra el aviso (OK lo cierra). true si se mostro; false si
+ * hay algo mas importante en pantalla (caida, medicamento, despertar, juego, edicion de alarma):
+ * el llamador reintenta mas tarde. */
+bool desk_app_show_comfort_alert(desk_app_t *app, uint8_t flags, int16_t temp_x10, uint8_t hum_pct);
 void desk_app_set_alarm(desk_app_t *app, uint8_t index, const desk_alarm_t *alarm);
 uint32_t desk_app_alarm_revision(const desk_app_t *app);
 /* Resultado de la ultima ronda de CogniGame; result.revision cambia cada vez que termina una. */

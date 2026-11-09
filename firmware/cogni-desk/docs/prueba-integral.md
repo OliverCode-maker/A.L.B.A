@@ -47,10 +47,17 @@ Copiar si falla: lineas `[radio]` de la pulsera y `[diag]` + `[wifi]` del robot 
 3. Sin hora NTP (sin Wi-Fi) el juego usa solo el banco de preguntas.
 4. El despertar real: la pulsera manda `VIGILIA_TRIGGER`; el robot imprime `[despertar] la pulsera detecto el despertar (bpm=N)` y muestra la misma pantalla. Se ignoran avisos repetidos por 30 min, y nunca interrumpe una caida, el medicamento ni una partida en curso.
 
+## 4c. Alerta de ambiente
+
+1. Con el robot en reposo, calentar el DHT11 (aliento o mano cerca, o secador a distancia) hasta pasar de 35 C, o humedecerlo por encima de 80 %. Tras ~30 s fuera de rango aparece **AMBIENTE / Temperatura alta** (o humedad) con los valores y suena el buzzer.
+2. OK cierra la pantalla. Serial: `[ambiente] estado: TEMP_ALTA`. Si sigue fuera de rango, repite el aviso a los 30 min.
+3. Al volver al rango se imprime `[ambiente] estado: OK` y en ThingsBoard `room_alert` pasa a `OK`.
+4. La pantalla de ambiente del menu debe decir `Confort: OK` o `FUERA DE RANGO`.
+
 ## 5. Nube (ThingsBoard)
 
 1. Robot: `[nube] conectado a ThingsBoard` y lineas `[nube] -> {...}`.
-2. ThingsBoard -> Devices -> Pulsera ALBA -> Latest telemetry: `bpm`, `spo2`, `bat`, `room_temp`, `room_hum`.
+2. ThingsBoard -> Devices -> Pulsera ALBA -> Latest telemetry: `bpm`, `spo2`, `bat`, `room_temp`, `room_hum` (y `room_alert` si hubo alerta de ambiente).
 3. Terminar una ronda del juego: aparecen `game_score`, `game_total`, `game_avg_s`.
 
 ## 6. Caida y estado del aviso

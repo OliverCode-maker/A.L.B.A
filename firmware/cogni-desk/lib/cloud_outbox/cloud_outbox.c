@@ -93,6 +93,18 @@ void cloud_outbox_push_env(cloud_outbox_t *o, uint64_t epoch_ms, int16_t temp_c_
     push_values(o, epoch_ms, vals, false);
 }
 
+void cloud_outbox_push_comfort(cloud_outbox_t *o, uint64_t epoch_ms, const char *text)
+{
+    char vals[64];
+    if (text == NULL || text[0] == '\0') return;
+    for (const char *p = text; *p; ++p) {                 /* solo letras, digitos, '_' y '+' */
+        const bool ok = (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_' || *p == '+';
+        if (!ok) return;
+    }
+    const int w = snprintf(vals, sizeof vals, "\"room_alert\":\"%s\"", text);
+    if (w > 0 && (size_t)w < sizeof vals) push_values(o, epoch_ms, vals, true);
+}
+
 void cloud_outbox_push_game(cloud_outbox_t *o, uint64_t epoch_ms, uint8_t score, uint8_t total,
                             uint32_t avg_ms)
 {
