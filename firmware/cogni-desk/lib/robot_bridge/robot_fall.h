@@ -13,8 +13,8 @@
  *    |                         |  v                                |  (ESP-NOW no confirma)
  *    +-------------------------+--+--- CANCELADA / tiempo ---------+
  *
- * C puro: el robot real traduce las acciones (ROBOT_ACT_*) a pantalla, voz y
- * radio. No toca hardware, asi que se prueba en el PC.
+ * C puro: el robot real traduce las acciones (ROBOT_ACT_*) a pantalla y radio.
+ * No toca hardware, asi que se prueba en el PC.
  *
  *     robot_action_t a = robot_fall_on_event(&fall, &msg.evt, millis(), &ref_seq);
  *     // ... y en la tarea periodica y al pulsar el boton:

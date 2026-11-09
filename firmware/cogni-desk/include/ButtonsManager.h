@@ -1,14 +1,16 @@
 #ifndef BUTTONS_MANAGER_H
 #define BUTTONS_MANAGER_H
 
-// Definición de pines de botones
-#define BTN_IZQ_PIN  4
-#define BTN_DER_PIN  5
-#define BTN_OK_PIN   6
+#include <stdint.h>
 
-// Prototipo de la función de configuración inicial
-void initButtons();
-void actualizarBotones();
-void leerBotonOKPresionado();
+typedef enum {
+    BUTTON_EVENT_NONE = 0,
+    BUTTON_EVENT_LEFT,
+    BUTTON_EVENT_RIGHT,
+    BUTTON_EVENT_OK
+} button_event_t;
+
+void initButtons(void);
+button_event_t actualizarBotones(uint32_t now_ms);
 
 #endif
