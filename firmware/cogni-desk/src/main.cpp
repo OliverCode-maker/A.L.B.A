@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <esp_system.h>
 
 #include "DeskApp.h"
 #include "DisplaysManager.h"
@@ -54,6 +55,7 @@ void setup() {
     initBuzzer();
     initSensors();
     desk_app_init(&app, millis());
+    desk_app_seed_game(&app, esp_random());   // el sorteo de preguntas cambia en cada arranque
     if (!initCommunication()) {
         Serial.println(F("ESP-NOW no disponible; interfaz y DHT11 siguen activos."));
     }

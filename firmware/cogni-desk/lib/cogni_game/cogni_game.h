@@ -35,6 +35,7 @@ typedef struct {
     uint8_t hour;    /* 0..23 */
 } game_clock_t;
 
+#define GAME_BANK_MAX          64u  /* tope del banco de preguntas para el sorteo */
 #define GAME_ORIENTATION_COUNT 3u   /* dia de la semana, fecha y momento del dia */
 
 /* Texto de una pregunta de orientacion armada al vuelo (las lineas de game_question_t apuntan aqui). */
@@ -70,7 +71,11 @@ typedef enum {
 typedef struct {
     game_state_t state;
     uint8_t rounds_played;
-    uint8_t pool_start;
+    uint32_t rng;                                  /* estado del sorteo (xorshift32) */
+    uint8_t picks[GAME_QUESTIONS_PER_ROUND];       /* preguntas del banco elegidas para esta ronda */
+    uint8_t prev_picks[GAME_QUESTIONS_PER_ROUND];  /* las de la ronda anterior (no se repiten) */
+    uint8_t prev_count;
+    game_question_t bank_question;                 /* la pregunta del banco actual, con opciones barajadas */
     uint8_t q_number;          /* 0..GAME_QUESTIONS_PER_ROUND-1 */
     uint8_t score;
     uint8_t answered;
@@ -110,6 +115,8 @@ typedef struct {
 } game_result_t;
 
 void cogni_game_init(cogni_game_t *g);
+/* Mezcla una semilla (por ejemplo esp_random()) para que el sorteo cambie entre arranques. */
+void cogni_game_seed(cogni_game_t *g, uint32_t seed);
 void cogni_game_start(cogni_game_t *g, uint32_t now_ms);                 /* abre la pantalla de inicio */
 /* Igual, pero si `clock` es valido la ronda arranca con GAME_ORIENTATION_COUNT preguntas de
  * orientacion (dia, fecha, momento del dia) y el resto del banco de preguntas personales. */

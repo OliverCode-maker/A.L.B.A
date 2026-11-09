@@ -1,5 +1,7 @@
 #include <unity.h>
 
+#include <string.h>
+
 #include "DeskApp.h"
 
 static desk_app_t app;
@@ -216,6 +218,17 @@ void test_medication_alarm_does_not_interrupt_fall_prompt(void)
     TEST_ASSERT_EQUAL_INT(DESK_SCREEN_FALL_PROMPT, desk_app_view(&app).screen);
 }
 
+static bool is_bank_question(const game_question_t *q)
+{
+    for (uint8_t i = 0u; i < game_content_count(); ++i) {
+        const game_question_t *b = game_content_get(i);
+        if (strcmp(b->lines[0], q->lines[0]) == 0 &&
+            ((b->lines[1] == 0) == (q->lines[1] == 0)) &&
+            (b->lines[1] == 0 || strcmp(b->lines[1], q->lines[1]) == 0)) return true;
+    }
+    return false;
+}
+
 static void go_idle(void)
 {
     desk_app_tick(&app, DESK_SPLASH_DURATION_MS, nullptr);
@@ -245,7 +258,7 @@ void test_wake_without_clock_still_offers_the_bank_questions(void)
     desk_app_on_input(&app, DESK_INPUT_OK, 11000u, nullptr);
     desk_app_on_input(&app, DESK_INPUT_OK, 11100u, nullptr);
     const game_view_t v = desk_app_view(&app).game;
-    TEST_ASSERT_EQUAL_PTR(game_content_get(0u), v.question);
+    TEST_ASSERT_TRUE(is_bank_question(v.question));
 }
 
 void test_wake_left_button_postpones_to_idle(void)
@@ -319,7 +332,7 @@ void test_invalid_date_is_rejected(void)
     TEST_ASSERT_TRUE(desk_app_on_wake(&app, 10000u));
     desk_app_on_input(&app, DESK_INPUT_OK, 11000u, nullptr);
     desk_app_on_input(&app, DESK_INPUT_OK, 11100u, nullptr);
-    TEST_ASSERT_EQUAL_PTR(game_content_get(0u), desk_app_view(&app).game.question);   // sin orientacion
+    TEST_ASSERT_TRUE(is_bank_question(desk_app_view(&app).game.question));   // sin orientacion
 }
 
 int main(int, char **)

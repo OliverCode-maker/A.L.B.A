@@ -102,6 +102,8 @@ void desk_app_set_date(desk_app_t *app, bool valid, uint8_t wday, uint8_t mday, 
  * true si se mostro; false si se ignoro (hay una caida o alarma en curso, el juego ya corre, o hay
  * un despertar reciente). */
 bool desk_app_on_wake(desk_app_t *app, uint32_t now_ms);
+/* Semilla del sorteo de preguntas (por ejemplo esp_random() al arrancar). */
+void desk_app_seed_game(desk_app_t *app, uint32_t seed);
 void desk_app_set_alarm(desk_app_t *app, uint8_t index, const desk_alarm_t *alarm);
 uint32_t desk_app_alarm_revision(const desk_app_t *app);
 /* Resultado de la ultima ronda de CogniGame; result.revision cambia cada vez que termina una. */

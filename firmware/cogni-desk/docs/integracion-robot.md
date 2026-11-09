@@ -50,13 +50,16 @@ pasivo. Suena con tres patrones segun la pantalla: pitidos rapidos en "posible c
 La opcion **CogniGame** juega rondas de 5 preguntas de opcion multiple. Los tres botones son las
 tres opciones: izquierdo = A, centro (OK) = B, derecho = C. No hay limite de tiempo ni penalizacion:
 si se falla, se muestra la respuesta correcta; al final se ve el puntaje y el tiempo medio de
-respuesta. Cada ronda empieza en una pregunta distinta del banco. Una caida o un aviso de
-medicamento interrumpen el juego.
+respuesta. Una caida o un aviso de medicamento interrumpen el juego.
 
-Para cambiar las preguntas se edita solo `lib/cogni_game/game_content.c` (sin tildes ni enie,
-lineas de hasta 21 caracteres, opciones de hasta 17; `pio test -e native` lo verifica). Las 3
-primeras preguntas son personales y de ejemplo: hay que reemplazarlas por datos reales del
-paciente. `desk_app_game_result()` entrega el ultimo resultado (`revision` cambia al terminar cada
+**Banco autobiografico (20 preguntas).** Cada vez que se abre CogniGame el robot sortea las
+preguntas del banco (`lib/cogni_game/game_content.c`): nunca repite una en la misma ronda ni las de
+la ronda anterior, y baraja el orden de las 3 opciones, asi la respuesta correcta cambia de boton.
+Las preguntas estan en primera persona ("mi regalo mas apreciado", "donde vivia a los 10 anos").
+**Todas las respuestas del archivo son ejemplos inventados: hay que reemplazarlas por la vida real
+del paciente.** Reglas (las verifica `pio test -e native`): al menos 20 preguntas y como maximo 64,
+sin tildes ni enie, lineas de hasta 21 caracteres, opciones de hasta 17 y distintas entre si.
+`desk_app_game_result()` entrega el ultimo resultado (`revision` cambia al terminar cada
 ronda) para publicarlo a la nube.
 
 ## Configuracion Wi-Fi
@@ -286,7 +289,7 @@ La propuesta pide que, al detectar la transicion sueno-vigilia, el robot active 
 
 ### Preguntas de orientacion (CogniGame)
 
-Si el robot tiene hora NTP, cada ronda empieza con 3 preguntas de orientacion armadas con la fecha real (`lib/cogni_game/orientation.c`) y sigue con 2 del banco personal (`game_content.c`):
+Si el robot tiene hora NTP, cada ronda empieza con 3 preguntas de orientacion armadas con la fecha real (`lib/cogni_game/orientation.c`) y sigue con 2 del banco autobiografico al azar (`game_content.c`):
 
 1. Que dia de la semana es hoy (Lunes ... Domingo)
 2. Que fecha es hoy (numero del dia del mes)

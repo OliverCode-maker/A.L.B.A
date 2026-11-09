@@ -233,6 +233,11 @@ void desk_app_set_clock(desk_app_t *app, bool valid, uint8_t hour, uint8_t minut
     app->clock_minute = minute < 60u ? minute : 0u;
 }
 
+void desk_app_seed_game(desk_app_t *app, uint32_t seed)
+{
+    cogni_game_seed(&app->game, seed);
+}
+
 void desk_app_set_date(desk_app_t *app, bool valid, uint8_t wday, uint8_t mday, uint8_t month)
 {
     app->date_valid = valid && wday < 7u && mday >= 1u && mday <= 31u && month >= 1u && month <= 12u;

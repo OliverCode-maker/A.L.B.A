@@ -5,26 +5,87 @@ static uint8_t orientation_count(const cogni_game_t *g)
     return g->orientation_on ? (uint8_t)GAME_ORIENTATION_COUNT : 0u;
 }
 
-static uint8_t current_pool_index(const cogni_game_t *g)
+static uint32_t next_random(cogni_game_t *g)
 {
-    const uint8_t count = game_content_count();
-    if (count == 0u || g->q_number < orientation_count(g)) return 0u;
-    return (uint8_t)((g->pool_start + (g->q_number - orientation_count(g))) % count);
+    uint32_t x = g->rng;
+    x ^= x << 13u;
+    x ^= x >> 17u;
+    x ^= x << 5u;
+    g->rng = x != 0u ? x : 0x9E3779B9u;
+    return g->rng;
 }
 
-/* Pregunta actual: orientacion (armada al vuelo) o del banco. */
+static void mix_seed(cogni_game_t *g, uint32_t seed)
+{
+    g->rng ^= seed * 2654435761u + 0x7F4A7C15u;
+    if (g->rng == 0u) g->rng = 0x9E3779B9u;
+    (void)next_random(g);
+}
+
+/* Elige al azar `m` preguntas distintas del banco, sin las de la ronda anterior si alcanzan. */
+static void pick_bank_questions(cogni_game_t *g, uint8_t m)
+{
+    uint8_t count = game_content_count();
+    if (count > GAME_BANK_MAX) count = (uint8_t)GAME_BANK_MAX;
+    uint8_t cand[GAME_BANK_MAX];
+    uint8_t n = 0u;
+    for (uint8_t i = 0u; i < count; ++i) {
+        bool used = false;
+        for (uint8_t k = 0u; k < g->prev_count; ++k) {
+            if (g->prev_picks[k] == i) used = true;
+        }
+        if (!used) cand[n++] = i;
+    }
+    if (n < m) {                       /* banco chico: se permite repetir las de la ronda anterior */
+        n = 0u;
+        for (uint8_t i = 0u; i < count; ++i) cand[n++] = i;
+    }
+    for (uint8_t i = 0u; i < m && i < n; ++i) {     /* Fisher-Yates parcial */
+        const uint8_t j = (uint8_t)(i + next_random(g) % (uint32_t)(n - i));
+        const uint8_t tmp = cand[i];
+        cand[i] = cand[j];
+        cand[j] = tmp;
+        g->picks[i] = cand[i];
+    }
+    for (uint8_t i = 0u; i < GAME_QUESTIONS_PER_ROUND; ++i) {
+        g->prev_picks[i] = i < m ? g->picks[i] : 0u;
+    }
+    g->prev_count = m < n ? m : n;
+}
+
+/* Pregunta actual: orientacion o banco, ambas armadas en el juego (el banco con opciones barajadas). */
 static const game_question_t *current_question(const cogni_game_t *g)
 {
-    return g->q_number < orientation_count(g) ? &g->dyn_question
-                                              : game_content_get(current_pool_index(g));
+    return g->q_number < orientation_count(g) ? &g->dyn_question : &g->bank_question;
 }
 
 static void prepare_question(cogni_game_t *g)
 {
-    if (g->q_number < orientation_count(g) &&
-        !game_orientation_build(&g->clock, g->q_number, g->rounds_played, &g->dyn_text,
-                                &g->dyn_question)) {
-        g->orientation_on = false;   /* el reloj dejo de servir: se sigue solo con el banco */
+    if (g->q_number < orientation_count(g)) {
+        if (!game_orientation_build(&g->clock, g->q_number, g->rounds_played, &g->dyn_text,
+                                    &g->dyn_question)) {
+            g->orientation_on = false;   /* el reloj dejo de servir: se sigue solo con el banco */
+        }
+        if (g->orientation_on) return;
+    }
+
+    const uint8_t slot = (uint8_t)(g->q_number - orientation_count(g));
+    const game_question_t *src = game_content_get(g->picks[slot < GAME_QUESTIONS_PER_ROUND ? slot : 0u]);
+    if (src == 0) src = game_content_get(0u);
+    if (src == 0) return;
+
+    /* Baraja las 3 opciones: la correcta cae en una posicion al azar. */
+    uint8_t perm[GAME_OPTIONS] = {0u, 1u, 2u};
+    for (uint8_t i = (uint8_t)(GAME_OPTIONS - 1u); i > 0u; --i) {
+        const uint8_t j = (uint8_t)(next_random(g) % (uint32_t)(i + 1u));
+        const uint8_t tmp = perm[i];
+        perm[i] = perm[j];
+        perm[j] = tmp;
+    }
+    for (uint8_t l = 0u; l < GAME_QUESTION_LINES; ++l) g->bank_question.lines[l] = src->lines[l];
+    for (uint8_t o = 0u; o < GAME_OPTIONS; ++o) {
+        g->bank_question.options[o] = src->options[perm[o]];
+        if (perm[o] == src->correct) g->bank_question.correct = o;
     }
 }
 
@@ -52,7 +113,12 @@ void cogni_game_init(cogni_game_t *g)
 {
     g->state = GAME_STATE_IDLE;
     g->rounds_played = 0u;
-    g->pool_start = 0u;
+    g->rng = 0x2545F491u;
+    g->prev_count = 0u;
+    for (uint8_t i = 0u; i < GAME_QUESTIONS_PER_ROUND; ++i) {
+        g->picks[i] = 0u;
+        g->prev_picks[i] = 0u;
+    }
     g->q_number = 0u;
     g->score = 0u;
     g->answered = 0u;
@@ -68,6 +134,11 @@ void cogni_game_init(cogni_game_t *g)
     g->clock.valid = false;
 }
 
+void cogni_game_seed(cogni_game_t *g, uint32_t seed)
+{
+    mix_seed(g, seed);
+}
+
 void cogni_game_start(cogni_game_t *g, uint32_t now_ms)
 {
     cogni_game_start_with_clock(g, now_ms, 0);
@@ -75,15 +146,11 @@ void cogni_game_start(cogni_game_t *g, uint32_t now_ms)
 
 void cogni_game_start_with_clock(cogni_game_t *g, uint32_t now_ms, const game_clock_t *clock)
 {
-    (void)now_ms;
+    mix_seed(g, now_ms);   /* el momento en que se abre el juego tambien cambia el sorteo */
     g->orientation_on = game_clock_is_valid(clock);
     if (g->orientation_on) g->clock = *clock;
-    const uint8_t count = game_content_count();
-    const uint8_t from_pool = (uint8_t)(GAME_QUESTIONS_PER_ROUND - orientation_count(g));
-    /* Cada ronda empieza en una pregunta distinta del banco. */
-    g->pool_start = count == 0u
-        ? 0u
-        : (uint8_t)(((uint32_t)g->rounds_played * from_pool) % count);
+    /* Preguntas del banco al azar, distintas a las de la ronda anterior. */
+    pick_bank_questions(g, (uint8_t)(GAME_QUESTIONS_PER_ROUND - orientation_count(g)));
     g->q_number = 0u;
     g->score = 0u;
     g->answered = 0u;
