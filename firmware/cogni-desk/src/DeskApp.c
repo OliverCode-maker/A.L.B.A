@@ -38,6 +38,7 @@ void desk_app_init(desk_app_t *app, uint32_t now_ms)
         app->alarms[i].enabled = false;
     }
     robot_fall_init(&app->fall);
+    cogni_game_init(&app->game);
 }
 
 robot_action_t desk_app_tick(desk_app_t *app, uint32_t now_ms, uint16_t *ref_seq)
@@ -57,6 +58,10 @@ robot_action_t desk_app_tick(desk_app_t *app, uint32_t now_ms, uint16_t *ref_seq
             app->eyes_closed = true;
             app->blink_ends_ms = now_ms + DESK_BLINK_DURATION_MS;
         }
+    }
+
+    if (app->screen == DESK_SCREEN_GAME) {
+        cogni_game_tick(&app->game, now_ms);
     }
 
     if (robot_fall_state(&app->fall) == ROBOT_FALL_IDLE) {
@@ -102,6 +107,9 @@ robot_action_t desk_app_on_input(desk_app_t *app, desk_input_t input, uint32_t n
                 app->screen = DESK_SCREEN_ENVIRONMENT;
             } else if (app->menu_selection == 1u) {
                 app->screen = DESK_SCREEN_HEALTH;
+            } else if (app->menu_selection == 2u) {
+                cogni_game_start(&app->game, now_ms);
+                app->screen = DESK_SCREEN_GAME;
             } else if (app->menu_selection == 3u) {
                 app->screen = DESK_SCREEN_CLOCK;
             } else {
@@ -116,6 +124,15 @@ robot_action_t desk_app_on_input(desk_app_t *app, desk_input_t input, uint32_t n
             app->screen = DESK_SCREEN_MENU;
         }
         break;
+    case DESK_SCREEN_GAME: {
+        const game_button_t button = input == DESK_INPUT_LEFT  ? GAME_BTN_A
+                                   : input == DESK_INPUT_RIGHT ? GAME_BTN_C
+                                                               : GAME_BTN_B;
+        if (cogni_game_on_button(&app->game, button, now_ms)) {
+            app->screen = DESK_SCREEN_MENU;
+        }
+        break;
+    }
     case DESK_SCREEN_CLOCK:
         if (input == DESK_INPUT_LEFT) {
             app->screen = DESK_SCREEN_MENU;
@@ -206,6 +223,11 @@ uint32_t desk_app_alarm_revision(const desk_app_t *app)
     return app->alarm_revision;
 }
 
+game_result_t desk_app_game_result(const desk_app_t *app)
+{
+    return cogni_game_result(&app->game);
+}
+
 desk_view_t desk_app_view(const desk_app_t *app)
 {
     desk_view_t view = {0};
@@ -218,6 +240,7 @@ desk_view_t desk_app_view(const desk_app_t *app)
     view.selected_alarm = app->selected_alarm;
     view.alarm_edit_field = app->alarm_edit_field;
     view.medication_alarm_index = app->medication_alarm_index;
+    view.game = cogni_game_view(&app->game);
     for (uint8_t i = 0u; i < DESK_ALARM_COUNT; ++i) {
         view.alarms[i] = app->alarms[i];
     }

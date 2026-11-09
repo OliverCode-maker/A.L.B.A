@@ -88,6 +88,7 @@ void loop() {
         view.selected_alarm != last_view.selected_alarm ||
         view.alarm_edit_field != last_view.alarm_edit_field ||
         view.medication_alarm_index != last_view.medication_alarm_index ||
+        view.game.revision != last_view.game.revision ||
         view.alarms[0].hour != last_view.alarms[0].hour ||
         view.alarms[0].minute != last_view.alarms[0].minute ||
         view.alarms[0].enabled != last_view.alarms[0].enabled ||

@@ -45,6 +45,20 @@ El buzzer esta en el GPIO 14 (`DESK_BUZZER_GPIO`) y se maneja con `tone()`, asi 
 pasivo. Suena con tres patrones segun la pantalla: pitidos rapidos en "posible caida", largos en
 "caida confirmada" (ambos hasta pulsar OK), y suaves en "medicamento" (maximo 60 s).
 
+## CogniGame
+
+La opcion **CogniGame** juega rondas de 5 preguntas de opcion multiple. Los tres botones son las
+tres opciones: izquierdo = A, centro (OK) = B, derecho = C. No hay limite de tiempo ni penalizacion:
+si se falla, se muestra la respuesta correcta; al final se ve el puntaje y el tiempo medio de
+respuesta. Cada ronda empieza en una pregunta distinta del banco. Una caida o un aviso de
+medicamento interrumpen el juego.
+
+Para cambiar las preguntas se edita solo `lib/cogni_game/game_content.c` (sin tildes ni enie,
+lineas de hasta 21 caracteres, opciones de hasta 17; `pio test -e native` lo verifica). Las 3
+primeras preguntas son personales y de ejemplo: hay que reemplazarlas por datos reales del
+paciente. `desk_app_game_result()` entrega el ultimo resultado (`revision` cambia al terminar cada
+ronda) para publicarlo a la nube.
+
 ## Configuracion Wi-Fi
 
 `WifiManager` intenta las dos credenciales EEPROM guardadas y, si ninguna conecta, inicia el

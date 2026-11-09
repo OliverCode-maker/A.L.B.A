@@ -63,9 +63,53 @@ void test_menu_navigation_opens_environment_and_feature_placeholder(void)
 
     desk_app_on_input(&app, DESK_INPUT_RIGHT, DESK_SPLASH_DURATION_MS + 7u, nullptr);
     desk_app_on_input(&app, DESK_INPUT_OK, DESK_SPLASH_DURATION_MS + 8u, nullptr);
-    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_FEATURE, desk_app_view(&app).screen);  // opcion 3: aun placeholder
-    desk_app_on_input(&app, DESK_INPUT_LEFT, DESK_SPLASH_DURATION_MS + 9u, nullptr);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_GAME, desk_app_view(&app).screen);     // opcion 3: CogniGame
+    TEST_ASSERT_EQUAL_INT(GAME_STATE_INTRO, desk_app_view(&app).game.state);
+    desk_app_on_input(&app, DESK_INPUT_LEFT, DESK_SPLASH_DURATION_MS + 9u, nullptr);   // IZQ en la intro: volver
     TEST_ASSERT_EQUAL_INT(DESK_SCREEN_MENU, desk_app_view(&app).screen);
+}
+
+void test_cogni_game_round_runs_inside_the_desk_app(void)
+{
+    uint32_t t = DESK_SPLASH_DURATION_MS;
+    desk_app_tick(&app, t, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_OK, ++t, nullptr);      // IDLE -> MENU
+    desk_app_on_input(&app, DESK_INPUT_RIGHT, ++t, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_RIGHT, ++t, nullptr);   // opcion 3
+    desk_app_on_input(&app, DESK_INPUT_OK, ++t, nullptr);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_GAME, desk_app_view(&app).screen);
+    desk_app_on_input(&app, DESK_INPUT_OK, ++t, nullptr);      // empezar
+    TEST_ASSERT_EQUAL_INT(GAME_STATE_QUESTION, desk_app_view(&app).game.state);
+
+    for (uint8_t i = 0u; i < GAME_QUESTIONS_PER_ROUND; ++i) {
+        const game_view_t v = desk_app_view(&app).game;
+        TEST_ASSERT_EQUAL_INT(GAME_STATE_QUESTION, v.state);
+        desk_app_on_input(&app, DESK_INPUT_LEFT, t += 100u, nullptr);   // responde A
+        t += GAME_FEEDBACK_MS;
+        desk_app_tick(&app, t, nullptr);                                // el aviso se cierra solo
+    }
+    TEST_ASSERT_EQUAL_INT(GAME_STATE_RESULT, desk_app_view(&app).game.state);
+    TEST_ASSERT_EQUAL_UINT32(1u, desk_app_game_result(&app).revision);
+    desk_app_on_input(&app, DESK_INPUT_OK, ++t, nullptr);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_MENU, desk_app_view(&app).screen);
+}
+
+void test_fall_prompt_interrupts_the_game(void)
+{
+    uint32_t t = DESK_SPLASH_DURATION_MS;
+    desk_app_tick(&app, t, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_OK, ++t, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_RIGHT, ++t, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_RIGHT, ++t, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_OK, ++t, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_OK, ++t, nullptr);
+    TEST_ASSERT_EQUAL_INT(GAME_STATE_QUESTION, desk_app_view(&app).game.state);
+
+    alba_event_t event;
+    uint16_t ref_seq = 0u;
+    alba_pack_event(&event, 12u, t, ALBA_ALERTA_CAIDA_DETECTADA, 3900u, ALBA_CONF_PENDIENTE);
+    desk_app_on_fall_event(&app, &event, t, &ref_seq);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_FALL_PROMPT, desk_app_view(&app).screen);
 }
 
 void test_clock_menu_edits_and_saves_three_alarm_fields(void)
@@ -178,6 +222,8 @@ int main(int, char **)
     RUN_TEST(test_splash_transitions_to_idle_without_blocking);
     RUN_TEST(test_idle_eyes_blink_without_blocking);
     RUN_TEST(test_menu_navigation_opens_environment_and_feature_placeholder);
+    RUN_TEST(test_cogni_game_round_runs_inside_the_desk_app);
+    RUN_TEST(test_fall_prompt_interrupts_the_game);
     RUN_TEST(test_clock_menu_edits_and_saves_three_alarm_fields);
     RUN_TEST(test_alarm_settings_wrap_and_invalid_values_are_ignored);
     RUN_TEST(test_fall_prompt_uses_ok_to_request_cancel);
