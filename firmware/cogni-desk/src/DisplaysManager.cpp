@@ -270,7 +270,8 @@ static void escribirLinea(Adafruit_SSD1306 &oled, int y, const char *texto) {
   oled.println(texto);
 }
 
-void mostrarVista(const desk_view_t *vista, const environment_reading_t *ambiente) {
+void mostrarVista(const desk_view_t *vista, const environment_reading_t *ambiente,
+                  const health_reading_t *salud) {
   if (vista == nullptr) return;
 
   if (vista->screen == DESK_SCREEN_SPLASH) {
@@ -346,6 +347,91 @@ void mostrarVista(const desk_view_t *vista, const environment_reading_t *ambient
       escribirLinea(oledDerecho, 24, value);
     }
     escribirLinea(oledDerecho, 48, "IZQ: Volver");
+  } else if (vista->screen == DESK_SCREEN_GAME) {
+    const game_view_t &juego = vista->game;
+    static const char *const prefijos[GAME_OPTIONS] = {"IZQ ", "OK  ", "DER "};
+    if (juego.state == GAME_STATE_INTRO) {
+      oledIzquierdo.drawBitmap(32, 0, iconoCogniGame, 64, 64, SSD1306_WHITE);
+      oledDerecho.setTextSize(2);
+      escribirLinea(oledDerecho, 2, "Vamos a");
+      escribirLinea(oledDerecho, 20, "jugar!");
+      oledDerecho.setTextSize(1);
+      escribirLinea(oledDerecho, 42, "OK: Empezar");
+      escribirLinea(oledDerecho, 54, "IZQ: Volver");
+    } else if ((juego.state == GAME_STATE_QUESTION || juego.state == GAME_STATE_FEEDBACK) &&
+               juego.question != nullptr) {
+      char value[24];
+      snprintf(value, sizeof(value), "Pregunta %u de %u", static_cast<unsigned>(juego.number),
+               static_cast<unsigned>(juego.total));
+      escribirLinea(oledIzquierdo, 0, value);
+      if (juego.state == GAME_STATE_QUESTION) {
+        for (uint8_t i = 0u; i < GAME_QUESTION_LINES; ++i) {
+          if (juego.question->lines[i] != nullptr) {
+            escribirLinea(oledIzquierdo, static_cast<int>(16u + 11u * i), juego.question->lines[i]);
+          }
+        }
+        for (uint8_t i = 0u; i < GAME_OPTIONS; ++i) {
+          snprintf(value, sizeof(value), "%s%s", prefijos[i], juego.question->options[i]);
+          escribirLinea(oledDerecho, static_cast<int>(8u + 18u * i), value);
+        }
+      } else {
+        oledIzquierdo.setTextSize(2);
+        escribirLinea(oledIzquierdo, 24, juego.last_correct ? "Correcto!" : "Casi!");
+        oledIzquierdo.setTextSize(1);
+        if (juego.last_correct) {
+          escribirLinea(oledDerecho, 20, "Muy bien, sigue");
+          escribirLinea(oledDerecho, 32, "asi.");
+        } else {
+          escribirLinea(oledDerecho, 14, "La respuesta era:");
+          escribirLinea(oledDerecho, 28, juego.question->options[juego.question->correct]);
+        }
+        escribirLinea(oledDerecho, 54, "OK: Siguiente");
+      }
+    } else if (juego.state == GAME_STATE_RESULT) {
+      char value[24];
+      escribirLinea(oledIzquierdo, 4, "RESULTADO");
+      oledIzquierdo.setTextSize(2);
+      snprintf(value, sizeof(value), "%u de %u", static_cast<unsigned>(juego.score),
+               static_cast<unsigned>(juego.total));
+      escribirLinea(oledIzquierdo, 24, value);
+      oledIzquierdo.setTextSize(1);
+      escribirLinea(oledDerecho, 4, juego.score >= 4u ? "Excelente!"
+                                   : juego.score >= 2u ? "Muy bien!"
+                                                       : "Sigamos practicando");
+      snprintf(value, sizeof(value), "Tiempo medio: %lu s",
+               static_cast<unsigned long>((juego.avg_ms + 500u) / 1000u));
+      escribirLinea(oledDerecho, 24, value);
+      escribirLinea(oledDerecho, 54, "OK: Volver");
+    }
+  } else if (vista->screen == DESK_SCREEN_HEALTH) {
+    if (salud == nullptr || !salud->online) {
+      escribirLinea(oledDerecho, 4, "SALUD");
+      escribirLinea(oledDerecho, 22, "Sin senal de la");
+      escribirLinea(oledDerecho, 34, "pulsera");
+      escribirLinea(oledIzquierdo, 52, "Revisa que este");
+    } else {
+      char value[24];
+      escribirLinea(oledIzquierdo, 4, "PULSO");
+      oledIzquierdo.setTextSize(2);
+      if (salud->bpm_valid) snprintf(value, sizeof(value), "%u bpm", static_cast<unsigned>(salud->bpm));
+      else snprintf(value, sizeof(value), "-- bpm");
+      oledIzquierdo.setCursor(20, 24);
+      oledIzquierdo.print(value);
+      oledIzquierdo.setTextSize(1);
+
+      escribirLinea(oledDerecho, 4, "OXIGENO (SpO2)");
+      oledDerecho.setTextSize(2);
+      if (salud->spo2_valid) snprintf(value, sizeof(value), "%u %%", static_cast<unsigned>(salud->spo2));
+      else snprintf(value, sizeof(value), "-- %%");
+      oledDerecho.setCursor(20, 18);
+      oledDerecho.print(value);
+      oledDerecho.setTextSize(1);
+      if (salud->bat_valid) snprintf(value, sizeof(value), "Bateria: %u%%", static_cast<unsigned>(salud->bat_pct));
+      else snprintf(value, sizeof(value), "Bateria: --");
+      escribirLinea(oledDerecho, 38, value);
+      if (!salud->bpm_valid || !salud->spo2_valid) escribirLinea(oledIzquierdo, 52, "Sin lectura: ponla");
+    }
+    escribirLinea(oledDerecho, 54, "IZQ: Volver");
   } else if (vista->screen == DESK_SCREEN_CLOCK) {
     oledIzquierdo.drawBitmap(32, 0, iconoReloj, 64, 64, SSD1306_WHITE);
     escribirLinea(oledDerecho, 2, "RELOJ");

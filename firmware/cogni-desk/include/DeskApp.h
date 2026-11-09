@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "robot_fall.h"
+#include "cogni_game.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,7 +34,9 @@ typedef enum {
     DESK_SCREEN_ALARM_EDIT,
     DESK_SCREEN_MEDICATION_ALERT,
     DESK_SCREEN_FALL_PROMPT,
-    DESK_SCREEN_FALL_CONFIRMED
+    DESK_SCREEN_FALL_CONFIRMED,
+    DESK_SCREEN_HEALTH,
+    DESK_SCREEN_GAME
 } desk_screen_t;
 
 typedef struct {
@@ -53,6 +56,7 @@ typedef struct {
     uint8_t alarm_edit_field;
     uint8_t medication_alarm_index;
     desk_alarm_t alarms[DESK_ALARM_COUNT];
+    game_view_t game;
 } desk_view_t;
 
 typedef struct {
@@ -71,6 +75,7 @@ typedef struct {
     uint32_t alarm_revision;
     desk_alarm_t alarms[DESK_ALARM_COUNT];
     robot_fall_t fall;
+    cogni_game_t game;
 } desk_app_t;
 
 void desk_app_init(desk_app_t *app, uint32_t now_ms);
@@ -83,6 +88,8 @@ bool desk_app_show_medication_alarm(desk_app_t *app, uint8_t alarm_index);
 void desk_app_set_clock(desk_app_t *app, bool valid, uint8_t hour, uint8_t minute);
 void desk_app_set_alarm(desk_app_t *app, uint8_t index, const desk_alarm_t *alarm);
 uint32_t desk_app_alarm_revision(const desk_app_t *app);
+/* Resultado de la ultima ronda de CogniGame; result.revision cambia cada vez que termina una. */
+game_result_t desk_app_game_result(const desk_app_t *app);
 desk_view_t desk_app_view(const desk_app_t *app);
 
 #ifdef __cplusplus

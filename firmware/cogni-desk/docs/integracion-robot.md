@@ -34,6 +34,31 @@ reintenta segun `robot_fall`. MQTT aun no esta integrado; una caida confirmada s
 pendiente de aviso al cuidador. Al integrar MQTT, la conexion Wi-Fi debe permanecer en canal 1
 para compartir la radio con ESP-NOW.
 
+## Salud y buzzer
+
+La opcion **Salud** del menu muestra pulso, SpO2 y bateria de la ultima telemetria recibida de la
+pulsera (`leerSalud()` en `CommManager`). Si pasan `DESK_HEALTH_STALE_MS` (90 s) sin telemetria se
+muestra "Sin senal de la pulsera". Un valor "--" significa que la pulsera lo mando como invalido
+(por ejemplo, el MAX30102 no detecta la muneca, o la pulsera no mide su bateria).
+
+El buzzer esta en el GPIO 14 (`DESK_BUZZER_GPIO`) y se maneja con `tone()`, asi que sirve activo o
+pasivo. Suena con tres patrones segun la pantalla: pitidos rapidos en "posible caida", largos en
+"caida confirmada" (ambos hasta pulsar OK), y suaves en "medicamento" (maximo 60 s).
+
+## CogniGame
+
+La opcion **CogniGame** juega rondas de 5 preguntas de opcion multiple. Los tres botones son las
+tres opciones: izquierdo = A, centro (OK) = B, derecho = C. No hay limite de tiempo ni penalizacion:
+si se falla, se muestra la respuesta correcta; al final se ve el puntaje y el tiempo medio de
+respuesta. Cada ronda empieza en una pregunta distinta del banco. Una caida o un aviso de
+medicamento interrumpen el juego.
+
+Para cambiar las preguntas se edita solo `lib/cogni_game/game_content.c` (sin tildes ni enie,
+lineas de hasta 21 caracteres, opciones de hasta 17; `pio test -e native` lo verifica). Las 3
+primeras preguntas son personales y de ejemplo: hay que reemplazarlas por datos reales del
+paciente. `desk_app_game_result()` entrega el ultimo resultado (`revision` cambia al terminar cada
+ronda) para publicarlo a la nube.
+
 ## Configuracion Wi-Fi
 
 `WifiManager` intenta las dos credenciales EEPROM guardadas y, si ninguna conecta, inicia el

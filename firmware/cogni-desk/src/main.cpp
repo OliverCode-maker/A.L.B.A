@@ -7,11 +7,28 @@
 #include "SensorManager.h"
 #include "WifiManager.h"
 #include "ClockManager.h"
+#include "BuzzerManager.h"
 
 static desk_app_t app;
 static desk_view_t last_view;
 static bool has_rendered_view = false;
 static environment_reading_t ambiente;
+static health_reading_t last_salud;
+
+static bool mismaSalud(const health_reading_t &a, const health_reading_t &b) {
+    return a.online == b.online && a.bpm_valid == b.bpm_valid && a.bpm == b.bpm &&
+           a.spo2_valid == b.spo2_valid && a.spo2 == b.spo2 &&
+           a.bat_valid == b.bat_valid && a.bat_pct == b.bat_pct;
+}
+
+static buzzer_pattern_t patronBuzzer(desk_screen_t screen) {
+    switch (screen) {
+    case DESK_SCREEN_FALL_PROMPT:     return BUZZER_PATTERN_FALL;
+    case DESK_SCREEN_FALL_CONFIRMED:  return BUZZER_PATTERN_FALL_CONFIRMED;
+    case DESK_SCREEN_MEDICATION_ALERT: return BUZZER_PATTERN_MEDICATION;
+    default:                          return BUZZER_PATTERN_OFF;
+    }
+}
 
 static desk_input_t traducirEntrada(button_event_t event) {
     switch (event) {
@@ -31,6 +48,7 @@ void setup() {
     }
 
     initButtons();
+    initBuzzer();
     initSensors();
     desk_app_init(&app, millis());
     if (!initCommunication()) {
@@ -59,6 +77,8 @@ void loop() {
     actualizarClockManager(&app, now_ms);
 
     const desk_view_t view = desk_app_view(&app);
+    actualizarBuzzer(patronBuzzer(view.screen), now_ms);
+    const health_reading_t salud = leerSalud(now_ms);
     if (!has_rendered_view || view.screen != last_view.screen ||
         view.menu_selection != last_view.menu_selection ||
         view.eyes_closed != last_view.eyes_closed ||
@@ -68,6 +88,7 @@ void loop() {
         view.selected_alarm != last_view.selected_alarm ||
         view.alarm_edit_field != last_view.alarm_edit_field ||
         view.medication_alarm_index != last_view.medication_alarm_index ||
+        view.game.revision != last_view.game.revision ||
         view.alarms[0].hour != last_view.alarms[0].hour ||
         view.alarms[0].minute != last_view.alarms[0].minute ||
         view.alarms[0].enabled != last_view.alarms[0].enabled ||
@@ -77,9 +98,11 @@ void loop() {
         view.alarms[2].hour != last_view.alarms[2].hour ||
         view.alarms[2].minute != last_view.alarms[2].minute ||
         view.alarms[2].enabled != last_view.alarms[2].enabled ||
-        (view.screen == DESK_SCREEN_ENVIRONMENT && new_environment_sample)) {
+        (view.screen == DESK_SCREEN_ENVIRONMENT && new_environment_sample) ||
+        (view.screen == DESK_SCREEN_HEALTH && !mismaSalud(salud, last_salud))) {
         ambiente = leerAmbiente();
-        mostrarVista(&view, &ambiente);
+        mostrarVista(&view, &ambiente, &salud);
+        last_salud = salud;
         last_view = view;
         has_rendered_view = true;
     }

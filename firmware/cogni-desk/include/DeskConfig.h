@@ -21,4 +21,10 @@
 
 #define DESK_BUTTON_DEBOUNCE_MS    30u
 
+#define DESK_BUZZER_GPIO           14u
+/* La pulsera manda telemetria cada 30 s: si pasan 90 s sin recibir nada, se muestra "sin senal". */
+#define DESK_HEALTH_STALE_MS    90000u
+/* El aviso de medicamento deja de sonar solo despues de este tiempo (la pantalla sigue hasta OK). */
+#define DESK_MEDICATION_BUZZ_MAX_MS 60000u
+
 #endif

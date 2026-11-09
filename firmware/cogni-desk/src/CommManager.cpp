@@ -28,6 +28,10 @@ bool communication_ready;
 volatile uint32_t dropped_packets;
 uint32_t reported_drops;
 
+health_reading_t last_health;      // ultimos vitales validos recibidos
+uint32_t last_health_ms;
+bool health_seen;
+
 bool checkEspResult(esp_err_t result, const char *operation) {
   if (result == ESP_OK) return true;
   Serial.printf("[esp-now] %s: %s\n", operation, esp_err_to_name(result));
@@ -57,6 +61,14 @@ void handleReceivedPacket(desk_app_t *app, const ReceivedPacket &packet, uint32_
   }
 
   if (message.type == ALBA_MSG_TELEMETRIA) {
+    last_health.bpm_valid = message.tel.bpm != ALBA_BPM_INVALID;
+    last_health.bpm = message.tel.bpm;
+    last_health.spo2_valid = message.tel.spo2 != ALBA_SPO2_INVALID;
+    last_health.spo2 = message.tel.spo2;
+    last_health.bat_valid = message.tel.bateria_pct != ALBA_BAT_INVALID;
+    last_health.bat_pct = message.tel.bateria_pct;
+    last_health_ms = now_ms;
+    health_seen = true;
     Serial.printf("[pulsera] BPM=%u SpO2=%u bateria=%u%%\n",
                   static_cast<unsigned>(message.tel.bpm),
                   static_cast<unsigned>(message.tel.spo2),
@@ -130,6 +142,18 @@ void procesarComunicacionesBackground(desk_app_t *app, uint32_t now_ms) {
     Serial.printf("[esp-now] paquetes descartados por cola llena: %lu\n",
                   static_cast<unsigned long>(reported_drops));
   }
+}
+
+health_reading_t leerSalud(uint32_t now_ms) {
+  health_reading_t reading = last_health;
+  reading.online = health_seen &&
+                   static_cast<uint32_t>(now_ms - last_health_ms) < DESK_HEALTH_STALE_MS;
+  if (!reading.online) {
+    reading.bpm_valid = false;
+    reading.spo2_valid = false;
+    reading.bat_valid = false;
+  }
+  return reading;
 }
 
 void ejecutarAccionRobot(robot_action_t action, uint16_t ref_seq) {
