@@ -453,7 +453,7 @@ static void task_fall(void *)
             const fall_event_t model_event = fall_detector_model_observe(
                 &g_fall, model_result.window_t_ms,
                 model_result.probability >= FALL_MODEL_THRESHOLD,
-                model_result.rule_class == FALL_RULE_CLASS_FALL,
+                model_result.rule_class != FALL_RULE_CLASS_NON_FALL,
                 model_result.peak_g);
             handle_fall_event(model_event, model_result.window_t_ms,
                               model_result.probability);

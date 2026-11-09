@@ -171,10 +171,13 @@ por la misma ventana e informa la distribucion de clases de reglas y TP/FN/FP/TN
 las ventanas clasificadas `no-caida` o `caida`. Las ventanas `pre-impacto` se excluyen
 de esa matriz porque el modelo binario no tiene esa clase. Es concordancia entre
 predictores, no exactitud contra verdad-terreno. Solo el modelo TensorFlow genera
-la puntuacion de la alerta, pero el firmware ahora solo abre una ventana de cancelacion
-cuando el modelo y las reglas clasifican `caida` en dos ventanas consecutivas (maximo
-500 ms entre ellas). Esta concordancia puede reducir falsos positivos al levantar el brazo,
-pero tambien puede omitir caidas que las reglas no reconozcan; requiere validacion en la muneca.
+la puntuacion de la alerta y abre una ventana de cancelacion cuando el modelo detecta
+dos ventanas positivas dentro de 500 ms y las reglas identifican al menos una de ellas
+como `pre-impacto` o `caida`. Se tolera una ventana negativa intermedia para manejar
+predicciones inestables. Asi, las reglas corroboran una senal de caida libre/impacto sin
+exigir que tambien puedan confirmar la postura; dos positivos del modelo sin apoyo de
+las reglas no generan alerta. Requiere validacion en la muneca
+para medir sensibilidad y tasa de falsas alarmas.
 
 `tools/train_fall_model.py` ya no entrena TensorFlow para Three Classes: evalua un
 clasificador algorítmico por magnitud sobre su split de prueba. Ejemplo:

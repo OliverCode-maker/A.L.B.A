@@ -229,47 +229,55 @@ void fall_detector_cancel(fall_detector_t *fd)
 
 fall_event_t fall_detector_model_observe(fall_detector_t *fd, uint32_t now_ms,
                                          bool model_positive,
-                                         bool rule_confirmed, float peak_g)
+                                         bool rule_supporting, float peak_g)
 {
     if (!fd->cfg.model_only) return FALL_EVT_NONE;
     if (fd->state != FALL_ST_IDLE) {
         fd->model_positive_windows = 0u;
+        fd->model_rule_supporting = false;
         fd->model_peak_g = 0.0f;
         return FALL_EVT_NONE;
     }
     if (fd->refractory_active) {
         if ((int32_t)(now_ms - fd->refractory_until) < 0) {
             fd->model_positive_windows = 0u;
+            fd->model_rule_supporting = false;
             fd->model_peak_g = 0.0f;
             return FALL_EVT_NONE;
         }
         fd->refractory_active = false;
     }
 
-    if (!model_positive || !rule_confirmed) {
-        fd->model_positive_windows = 0u;
-        fd->model_peak_g = 0.0f;
-        return FALL_EVT_NONE;
-    }
+    if (!model_positive) return FALL_EVT_NONE;
 
     if (fd->model_positive_windows > 0u &&
         (uint32_t)(now_ms - fd->model_last_positive_ms) >
             FALL_MODEL_MAX_POSITIVE_INTERVAL_MS) {
         fd->model_positive_windows = 0u;
+        fd->model_rule_supporting = false;
         fd->model_peak_g = 0.0f;
     }
+
     fd->model_last_positive_ms = now_ms;
     if (peak_g > fd->model_peak_g) fd->model_peak_g = peak_g;
+    fd->model_rule_supporting = fd->model_rule_supporting || rule_supporting;
     if (fd->model_positive_windows < FALL_MODEL_POSITIVE_WINDOWS_REQUIRED) {
         fd->model_positive_windows++;
     }
     if (fd->model_positive_windows < FALL_MODEL_POSITIVE_WINDOWS_REQUIRED) {
         return FALL_EVT_NONE;
     }
+    if (!fd->model_rule_supporting) {
+        fd->model_positive_windows = 0u;
+        fd->model_rule_supporting = false;
+        fd->model_peak_g = 0.0f;
+        return FALL_EVT_NONE;
+    }
 
     memset(&fd->feat, 0, sizeof fd->feat);
     fd->feat.svm_max = fd->model_peak_g;
     fd->model_positive_windows = 0u;
+    fd->model_rule_supporting = false;
     fd->model_peak_g = 0.0f;
     fd->state = FALL_ST_CONFIRM;
     fd->t_confirm = now_ms;

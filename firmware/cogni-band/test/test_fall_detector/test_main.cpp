@@ -241,7 +241,7 @@ void test_model_only_mode_uses_external_candidates(void)
         fall_detector_model_observe(&fd, T, true, true, 3.0f));
     T += 250u;
     const fall_event_t candidate =
-        fall_detector_model_observe(&fd, T, true, true, 3.5f);
+        fall_detector_model_observe(&fd, T, true, false, 3.5f);
     count_event(candidate);
     TEST_ASSERT_EQUAL_INT(FALL_EVT_CANDIDATE, candidate);
     TEST_ASSERT_EQUAL_FLOAT(3.5f, fall_detector_features(&fd)->svm_max);
@@ -253,7 +253,7 @@ void test_model_only_mode_uses_external_candidates(void)
                           fall_detector_model_observe(&fd, T, true, true, 4.0f));
 }
 
-void test_model_only_ignores_isolated_positive_windows(void)
+void test_model_only_ignores_single_positive_window(void)
 {
     fall_config_t cfg;
     fall_config_default(&cfg);
@@ -265,10 +265,10 @@ void test_model_only_ignores_isolated_positive_windows(void)
         fall_detector_model_observe(&fd, T, true, false, 3.5f));
     T += 250u;
     TEST_ASSERT_EQUAL_INT(FALL_EVT_NONE,
-                          fall_detector_model_observe(&fd, T, true, false, 0.9f));
+                          fall_detector_model_observe(&fd, T, false, false, 0.9f));
     T += 250u;
     TEST_ASSERT_EQUAL_INT(FALL_EVT_NONE,
-                          fall_detector_model_observe(&fd, T, true, false, 0.9f));
+                          fall_detector_model_observe(&fd, T, false, false, 0.9f));
 
     rest(21000, 0.0f, 0.0f, 1.0f, 0.02f);
     TEST_ASSERT_EQUAL_INT(0, n_cand + n_conf + n_canc);
@@ -294,6 +294,107 @@ void test_model_only_positive_gap_resets_streak(void)
         FALL_EVT_CANDIDATE,
         fall_detector_model_observe(&fd, T, true, true, 3.2f));
     TEST_ASSERT_EQUAL_FLOAT(3.5f, fall_detector_features(&fd)->svm_max);
+}
+
+void test_model_only_accepts_preimpact_rule_support(void)
+{
+    fall_config_t cfg;
+    fall_config_default(&cfg);
+    cfg.model_only = true;
+    fall_detector_init(&fd, &cfg);
+
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_NONE,
+        fall_detector_model_observe(&fd, T, true, false, 3.0f));
+    T += 250u;
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_CANDIDATE,
+        fall_detector_model_observe(&fd, T, true, true, 3.5f));
+    TEST_ASSERT_EQUAL_INT(FALL_ST_CONFIRM, fall_detector_state(&fd));
+}
+
+void test_model_only_tolerates_one_negative_between_positives(void)
+{
+    fall_config_t cfg;
+    fall_config_default(&cfg);
+    cfg.model_only = true;
+    fall_detector_init(&fd, &cfg);
+
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_NONE,
+        fall_detector_model_observe(&fd, T, true, true, 3.0f));
+    T += 250u;
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_NONE,
+        fall_detector_model_observe(&fd, T, false, false, 0.9f));
+    T += 250u;
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_CANDIDATE,
+        fall_detector_model_observe(&fd, T, true, false, 3.5f));
+    TEST_ASSERT_EQUAL_INT(FALL_ST_CONFIRM, fall_detector_state(&fd));
+}
+
+void test_model_only_rejects_pair_without_rule_support(void)
+{
+    fall_config_t cfg;
+    fall_config_default(&cfg);
+    cfg.model_only = true;
+    fall_detector_init(&fd, &cfg);
+
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_NONE,
+        fall_detector_model_observe(&fd, T, true, false, 3.0f));
+    T += 250u;
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_NONE,
+        fall_detector_model_observe(&fd, T, true, false, 3.5f));
+    TEST_ASSERT_EQUAL_INT(FALL_ST_IDLE, fall_detector_state(&fd));
+    T += 250u;
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_NONE,
+        fall_detector_model_observe(&fd, T, true, true, 4.0f));
+    T += 250u;
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_CANDIDATE,
+        fall_detector_model_observe(&fd, T, true, false, 4.0f));
+}
+
+void test_model_only_rejects_high_confidence_pair_without_rule_support(void)
+{
+    fall_config_t cfg;
+    fall_config_default(&cfg);
+    cfg.model_only = true;
+    fall_detector_init(&fd, &cfg);
+
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_NONE,
+        fall_detector_model_observe(&fd, T, true, false, 3.0f));
+    T += 250u;
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_NONE,
+        fall_detector_model_observe(&fd, T, true, false, 3.5f));
+    TEST_ASSERT_EQUAL_INT(FALL_ST_IDLE, fall_detector_state(&fd));
+}
+
+void test_model_only_rejects_low_confidence_unconfirmed_streak(void)
+{
+    fall_config_t cfg;
+    fall_config_default(&cfg);
+    cfg.model_only = true;
+    fall_detector_init(&fd, &cfg);
+
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_NONE,
+        fall_detector_model_observe(&fd, T, true, false, 3.0f));
+    T += 250u;
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_NONE,
+        fall_detector_model_observe(&fd, T, true, false, 3.5f));
+    T += 250u;
+    TEST_ASSERT_EQUAL_INT(
+        FALL_EVT_NONE,
+        fall_detector_model_observe(&fd, T, true, false, 3.2f));
+    TEST_ASSERT_EQUAL_INT(FALL_ST_IDLE, fall_detector_state(&fd));
 }
 
 void test_no_history_at_boot_does_not_crash(void)
@@ -339,8 +440,13 @@ int main(int, char **)
     RUN_TEST(test_lowpass_reduces_vibration_without_clipping_impact_peak);
     RUN_TEST(test_custom_classifier_is_used);
     RUN_TEST(test_model_only_mode_uses_external_candidates);
-    RUN_TEST(test_model_only_ignores_isolated_positive_windows);
+    RUN_TEST(test_model_only_ignores_single_positive_window);
     RUN_TEST(test_model_only_positive_gap_resets_streak);
+    RUN_TEST(test_model_only_accepts_preimpact_rule_support);
+    RUN_TEST(test_model_only_tolerates_one_negative_between_positives);
+    RUN_TEST(test_model_only_rejects_pair_without_rule_support);
+    RUN_TEST(test_model_only_rejects_high_confidence_pair_without_rule_support);
+    RUN_TEST(test_model_only_rejects_low_confidence_unconfirmed_streak);
     RUN_TEST(test_no_history_at_boot_does_not_crash);
     RUN_TEST(test_timestamp_wraparound);
     RUN_TEST(test_ram_footprint);

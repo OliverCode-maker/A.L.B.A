@@ -129,6 +129,7 @@ typedef struct {
     bool     refractory_active;
     bool     cancel_req;
     uint8_t  model_positive_windows;
+    bool     model_rule_supporting;
     uint32_t model_last_positive_ms;
     float    model_peak_g;
 
@@ -162,10 +163,11 @@ void fall_detector_init(fall_detector_t *fd, const fall_config_t *cfg);
  *  se calculan con la magnitud de aceleracion sin filtrar. */
 fall_event_t fall_detector_process(fall_detector_t *fd, const fall_sample_t *sample);
 
-/** Requiere dos ventanas consecutivas positivas en ambos detectores. */
+/** Acepta dos ventanas positivas del modelo en 500 ms y apoyo de reglas en
+ *  al menos una de esas ventanas. */
 fall_event_t fall_detector_model_observe(fall_detector_t *fd, uint32_t now_ms,
                                          bool model_positive,
-                                         bool rule_confirmed, float peak_g);
+                                         bool rule_supporting, float peak_g);
 
 /** El usuario (o el cuidador) pulso "cancelar". Solo tiene efecto en estado CONFIRM;
  *  el evento FALL_EVT_CANCELLED se devuelve en la siguiente llamada a process(). */
