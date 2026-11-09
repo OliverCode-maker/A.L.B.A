@@ -243,3 +243,20 @@ Cada 10 s el robot imprime por serial:
 Cuando cambia de canal ademas escribe `[radio] robot encontrado en canal N (antes M)`.
 
 **Importante:** la pulsera debe compilarse con `BAND_COMM_MODE_ESPNOW` (en `platformio.ini` de la pulsera figura `BAND_COMM_MODE_WIFI_DEBUG`, que NO usa ESP-NOW).
+
+## Hora para la pulsera
+
+La pulsera no tiene reloj propio: usa la hora del robot para su horario de reposo (modo noche/dia). El robot obtiene la hora por NTP (`ClockManager`, necesita Wi-Fi al menos una vez desde el arranque) y se la manda con el mensaje `HORA` (UTC en segundos + zona `DESK_UTC_OFFSET_MIN = -300` minutos, Ecuador).
+
+- `robot_link` decide **cuando**: al aparecer la pulsera (3 envios seguidos), tras un reinicio de la pulsera y despues cada 6 h.
+- `CommManager::actualizarHora()` la envia por ESP-NOW y solo la da por entregada si la radio de la pulsera devuelve el **ACK**; si no, reintenta cada 5 s.
+- Sin hora NTP todavia, el robot imprime una vez `[hora] la pulsera pide la hora, pero el robot aun no tiene hora NTP` y espera.
+
+Salida esperada en el serial del robot:
+
+```
+[hora] HORA enviada: epoch=1790000000 zona=-300 min
+[hora] HORA recibida por la pulsera (ACK)
+```
+
+y en el de la pulsera: `[comm] hora recibida del robot: epoch=... zona=-300 min -> hora local N (ok)`.

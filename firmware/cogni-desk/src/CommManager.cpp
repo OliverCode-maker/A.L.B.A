@@ -6,7 +6,9 @@
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <esp_idf_version.h>
 #include <string.h>
+#include <time.h>
 
 #include "CloudManager.h"
 #include "DeskConfig.h"
@@ -27,6 +29,15 @@ QueueHandle_t rx_queue;
 robot_link_t link_state;
 link_stats_t stats;
 uint32_t last_diag_ms;
+
+// Envio de la HORA a la pulsera: solo cuenta como enviada si la radio de la pulsera devuelve el ACK.
+constexpr uint32_t TIME_ACK_TIMEOUT_MS = 1000u;
+constexpr uint32_t TIME_RETRY_GAP_MS = 5000u;
+volatile bool time_awaiting;
+volatile int8_t time_ack_result = -1;  // -1 sin resultado, 0 sin ACK, 1 con ACK
+uint32_t time_attempt_ms;
+uint32_t time_next_try_ms;
+bool time_waiting_ntp_logged;
 uint16_t robot_sequence;
 bool communication_ready;
 volatile uint32_t dropped_packets;
@@ -55,6 +66,60 @@ void onReceive(const esp_now_recv_info_t *info, const uint8_t *data, int length)
   if (rx_queue == nullptr || xQueueSend(rx_queue, &packet, 0) != pdTRUE) {
     __atomic_fetch_add(&dropped_packets, 1u, __ATOMIC_RELAXED);
   }
+}
+
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
+void onSend(const esp_now_send_info_t *, esp_now_send_status_t status) {
+#else
+void onSend(const uint8_t *, esp_now_send_status_t status) {
+#endif
+  if (time_awaiting) time_ack_result = (status == ESP_NOW_SEND_SUCCESS) ? 1 : 0;
+}
+
+// Manda HORA a la pulsera cuando robot_link lo pide (al aparecer, tras reiniciarse y cada 6 h).
+void actualizarHora(uint32_t now_ms) {
+  if (!communication_ready) return;
+
+  if (time_awaiting) {
+    const int8_t result = time_ack_result;
+    if (result < 0 && static_cast<uint32_t>(now_ms - time_attempt_ms) < TIME_ACK_TIMEOUT_MS) return;
+    time_awaiting = false;
+    if (result == 1) {
+      robot_link_time_sent(&link_state, now_ms);
+      Serial.println(F("[hora] HORA recibida por la pulsera (ACK)"));
+    } else {
+      Serial.println(F("[hora] la pulsera no confirmo la HORA; reintento en unos segundos"));
+    }
+    return;
+  }
+
+  if (!robot_link_need_time(&link_state, now_ms)) return;
+  if (static_cast<int32_t>(now_ms - time_next_try_ms) < 0) return;
+  time_next_try_ms = now_ms + TIME_RETRY_GAP_MS;
+
+  const time_t epoch = time(nullptr);
+  if (epoch < static_cast<time_t>(ALBA_EPOCH_MIN_S)) {
+    if (!time_waiting_ntp_logged) {
+      time_waiting_ntp_logged = true;
+      Serial.println(F("[hora] la pulsera pide la hora, pero el robot aun no tiene hora NTP (necesita Wi-Fi)"));
+    }
+    return;
+  }
+
+  alba_time_t packet;
+  alba_pack_time(&packet, robot_sequence++, static_cast<uint32_t>(epoch),
+                 static_cast<int16_t>(DESK_UTC_OFFSET_MIN));
+  time_ack_result = -1;
+  time_awaiting = true;
+  time_attempt_ms = now_ms;
+  if (!checkEspResult(esp_now_send(band_mac, reinterpret_cast<const uint8_t *>(&packet),
+                                   sizeof(packet)),
+                      "enviar HORA")) {
+    time_awaiting = false;
+    return;
+  }
+  Serial.printf("[hora] HORA enviada: epoch=%lu zona=%d min\n", static_cast<unsigned long>(epoch),
+                static_cast<int>(DESK_UTC_OFFSET_MIN));
 }
 
 void handleReceivedPacket(desk_app_t *app, const ReceivedPacket &packet, uint32_t now_ms) {
@@ -122,6 +187,7 @@ bool initCommunication(void) {
                       "configurar canal")) return false;
   if (!checkEspResult(esp_now_init(), "inicializar ESP-NOW")) return false;
   if (!checkEspResult(esp_now_register_recv_cb(onReceive), "registrar recepcion")) return false;
+  if (!checkEspResult(esp_now_register_send_cb(onSend), "registrar envio")) return false;
 
   esp_now_peer_info_t peer = {};
   memcpy(peer.peer_addr, band_mac, ESP_NOW_ETH_ALEN);
@@ -145,6 +211,8 @@ void procesarComunicacionesBackground(desk_app_t *app, uint32_t now_ms) {
   while (xQueueReceive(rx_queue, &packet, 0) == pdTRUE) {
     handleReceivedPacket(app, packet, now_ms);
   }
+
+  actualizarHora(now_ms);
 
   // Diagnostico cada 10 s: canal real de la radio y paquetes perdidos segun el seq de la pulsera.
   if (static_cast<uint32_t>(now_ms - last_diag_ms) >= 10000u) {

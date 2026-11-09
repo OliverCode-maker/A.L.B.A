@@ -24,6 +24,9 @@
 
 #define DESK_BUTTON_DEBOUNCE_MS    30u
 
+/* Zona horaria que el robot le informa a la pulsera en el mensaje HORA (Ecuador = UTC-5). */
+#define DESK_UTC_OFFSET_MIN      (-300)
+
 #define DESK_BUZZER_GPIO           14u
 /* La pulsera manda telemetria cada 30 s: si pasan 90 s sin recibir nada, se muestra "sin senal". */
 #define DESK_HEALTH_STALE_MS    90000u
