@@ -148,7 +148,7 @@ void handleWifi() {
   pending_credentials.password = password;
   WiFi.disconnect(false, false);
   WiFi.begin(pending_credentials.ssid.c_str(),
-             pending_credentials.password.c_str(), DESK_WIFI_CHANNEL);
+             pending_credentials.password.c_str(), DESK_WIFI_STA_CHANNEL);
   attempt_started_ms = millis();
   state = WifiState::kConnectingNew;
   status_message = "Intentando conectar a la nueva red...";
@@ -197,7 +197,7 @@ void beginSavedAttempt(int slot, uint32_t now_ms) {
   status_message = "Intentando conectar con una red guardada...";
   WiFi.disconnect(false, false);
   WiFi.begin(saved_credentials[slot].ssid.c_str(),
-             saved_credentials[slot].password.c_str(), DESK_WIFI_CHANNEL);
+             saved_credentials[slot].password.c_str(), DESK_WIFI_STA_CHANNEL);
 }
 
 void setSavedOrder(int first_slot) {

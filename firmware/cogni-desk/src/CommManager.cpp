@@ -10,6 +10,7 @@
 
 #include "CloudManager.h"
 #include "DeskConfig.h"
+#include "link_stats.h"
 #include "robot_link.h"
 
 namespace {
@@ -24,6 +25,8 @@ const uint8_t band_mac[ESP_NOW_ETH_ALEN] = DESK_BAND_STA_MAC;
 const uint8_t expected_sta_mac[ESP_NOW_ETH_ALEN] = DESK_EXPECTED_STA_MAC;
 QueueHandle_t rx_queue;
 robot_link_t link_state;
+link_stats_t stats;
+uint32_t last_diag_ms;
 uint16_t robot_sequence;
 bool communication_ready;
 volatile uint32_t dropped_packets;
@@ -61,6 +64,9 @@ void handleReceivedPacket(desk_app_t *app, const ReceivedPacket &packet, uint32_
     return;
   }
 
+  link_stats_on_seq(&stats, message.type == ALBA_MSG_TELEMETRIA ? message.tel.hdr.seq
+                                                                : message.evt.hdr.seq);
+
   if (message.type == ALBA_MSG_TELEMETRIA) {
     last_health.bpm_valid = message.tel.bpm != ALBA_BPM_INVALID;
     last_health.bpm = message.tel.bpm;
@@ -90,6 +96,7 @@ void handleReceivedPacket(desk_app_t *app, const ReceivedPacket &packet, uint32_
 
 bool initCommunication(void) {
   robot_link_init(&link_state);
+  link_stats_init(&stats);
   rx_queue = xQueueCreate(RX_QUEUE_LENGTH, sizeof(ReceivedPacket));
   if (rx_queue == nullptr) {
     Serial.println(F("[esp-now] no se pudo crear la cola de recepcion"));
@@ -118,7 +125,7 @@ bool initCommunication(void) {
 
   esp_now_peer_info_t peer = {};
   memcpy(peer.peer_addr, band_mac, ESP_NOW_ETH_ALEN);
-  peer.channel = DESK_ESPNOW_CHANNEL;
+  peer.channel = 0;  // 0 = canal actual de la radio (cambia cuando el Wi-Fi se conecta al router)
   peer.ifidx = WIFI_IF_STA;
   peer.encrypt = false;
   if (!checkEspResult(esp_now_add_peer(&peer), "agregar Cogni-Band como peer")) return false;
@@ -137,6 +144,22 @@ void procesarComunicacionesBackground(desk_app_t *app, uint32_t now_ms) {
   ReceivedPacket packet;
   while (xQueueReceive(rx_queue, &packet, 0) == pdTRUE) {
     handleReceivedPacket(app, packet, now_ms);
+  }
+
+  // Diagnostico cada 10 s: canal real de la radio y paquetes perdidos segun el seq de la pulsera.
+  if (static_cast<uint32_t>(now_ms - last_diag_ms) >= 10000u) {
+    last_diag_ms = now_ms;
+    uint8_t primary = 0u;
+    wifi_second_chan_t second = WIFI_SECOND_CHAN_NONE;
+    esp_wifi_get_channel(&primary, &second);
+    Serial.printf("[diag] canal=%u wifi=%s nube=%s recibidos=%lu perdidos=%lu (%u%%) reinicios_pulsera=%lu\n",
+                  static_cast<unsigned>(primary),
+                  WiFi.status() == WL_CONNECTED ? "si" : "no",
+                  cloudConectado() ? "si" : "no",
+                  static_cast<unsigned long>(stats.received),
+                  static_cast<unsigned long>(stats.lost),
+                  static_cast<unsigned>(link_stats_loss_pct(&stats)),
+                  static_cast<unsigned long>(stats.resets));
   }
 
   const uint32_t dropped = __atomic_load_n(&dropped_packets, __ATOMIC_RELAXED);

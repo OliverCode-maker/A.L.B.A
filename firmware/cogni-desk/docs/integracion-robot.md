@@ -215,3 +215,31 @@ Configuracion (una sola vez por computador):
 3. Compilar y subir. Sin `cloud_secrets.h` la nube queda desactivada y lo demas funciona igual.
 
 Detalles: cola de 16 mensajes en RAM (sin red descarta primero telemetria antigua y conserva las alertas); si el robot ya tiene hora NTP los mensajes llevan `ts`, si no, ThingsBoard usa la hora de llegada; TLS usa `setInsecure()` (cifra pero no verifica el servidor: solo pruebas).
+
+## Canal automatico (hotspot del celular)
+
+ESP-NOW y el Wi-Fi comparten la misma radio: cuando el robot se conecta a un router o al hotspot del celular, su radio pasa al canal de esa red, y ese canal puede ser cualquiera. Antes el robot forzaba el canal 1 y la conexion fallaba o la pulsera quedaba sorda.
+
+Ahora:
+
+- **Robot:** se conecta con `DESK_WIFI_STA_CHANNEL = 0` (el canal que use la red) y su peer ESP-NOW usa `channel = 0` (el canal actual). Si no hay Wi-Fi, queda en el canal 1.
+- **Pulsera:** envia unicast y espera el ACK de la radio (`esp_now_send` + callback). Con 2 envios seguidos sin ACK busca el canal: prueba 6, 11, 1..13 con el mismo paquete hasta que el robot responde, y se queda en ese canal (`lib/band_channel`). La busqueda tarda como maximo ~1.5 s y ocurre solo dentro de la tarea de radio.
+- **Si el robot cambia de canal** (se conecta al Wi-Fi, o el hotspot cambia), la pulsera lo vuelve a encontrar sola en el siguiente envio (la telemetria sale cada 30 s).
+
+### Diagnostico
+
+Cada 10 s el robot imprime por serial:
+
+```
+[diag] canal=6 wifi=si nube=si recibidos=42 perdidos=3 (7%) reinicios_pulsera=0
+```
+
+`perdidos` sale de los saltos del contador `seq` de la pulsera (`lib/link_stats`). Cada 60 s la pulsera imprime:
+
+```
+[radio] canal=6 ok=40 sin_ack=5 busquedas=2 cambios=1
+```
+
+Cuando cambia de canal ademas escribe `[radio] robot encontrado en canal N (antes M)`.
+
+**Importante:** la pulsera debe compilarse con `BAND_COMM_MODE_ESPNOW` (en `platformio.ini` de la pulsera figura `BAND_COMM_MODE_WIFI_DEBUG`, que NO usa ESP-NOW).
