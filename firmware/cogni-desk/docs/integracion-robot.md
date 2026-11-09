@@ -196,3 +196,81 @@ En el PC, sin placa:
 - `cd firmware/cogni-desk && pio test -e native` (32 pruebas del enlace y del asistente de caidas).
 - `cd firmware/cogni-band && pio test -e native -f test_robot_roundtrip` (pulsera y robot juntos: caida, cancelar,
   cancelar perdido en el aire, duplicados, hora).
+
+## Nube (ThingsBoard)
+
+El robot publica por MQTT a ThingsBoard desde `CloudManager` (tarea FreeRTOS en el nucleo 0, no bloquea botones, pantallas ni buzzer).
+
+| Origen | Claves en ThingsBoard |
+|---|---|
+| Telemetria de la pulsera | `bpm`, `spo2`, `bateria`, ... (ver `alba_thingsboard.h`) |
+| Evento de la pulsera (caida) | alerta, valor pico, confirmacion |
+| DHT11 del robot (cada 30 s) | `room_temp` (°C), `room_hum` (%) |
+| CogniGame, al terminar una ronda | `game_score`, `game_total`, `game_avg_s` |
+
+Configuracion (una sola vez por computador):
+
+1. Copiar `firmware/cogni-desk/include/cloud_secrets.example.h` como `cloud_secrets.h` (esta en `.gitignore`, no se sube).
+2. Completar host, puerto, TLS y el **token** del dispositivo (ThingsBoard -> Devices -> Pulsera ALBA -> Copy access token).
+3. Compilar y subir. Sin `cloud_secrets.h` la nube queda desactivada y lo demas funciona igual.
+
+Detalles: cola de 16 mensajes en RAM (sin red descarta primero telemetria antigua y conserva las alertas); si el robot ya tiene hora NTP los mensajes llevan `ts`, si no, ThingsBoard usa la hora de llegada; TLS usa `setInsecure()` (cifra pero no verifica el servidor: solo pruebas).
+
+## Canal automatico (hotspot del celular)
+
+ESP-NOW y el Wi-Fi comparten la misma radio: cuando el robot se conecta a un router o al hotspot del celular, su radio pasa al canal de esa red, y ese canal puede ser cualquiera. Antes el robot forzaba el canal 1 y la conexion fallaba o la pulsera quedaba sorda.
+
+Ahora:
+
+- **Robot:** se conecta con `DESK_WIFI_STA_CHANNEL = 0` (el canal que use la red) y su peer ESP-NOW usa `channel = 0` (el canal actual). Si no hay Wi-Fi, queda en el canal 1.
+- **Pulsera:** envia unicast y espera el ACK de la radio (`esp_now_send` + callback). Con 2 envios seguidos sin ACK busca el canal: prueba 6, 11, 1..13 con el mismo paquete hasta que el robot responde, y se queda en ese canal (`lib/band_channel`). La busqueda tarda como maximo ~1.5 s y ocurre solo dentro de la tarea de radio.
+- **Si el robot cambia de canal** (se conecta al Wi-Fi, o el hotspot cambia), la pulsera lo vuelve a encontrar sola en el siguiente envio (la telemetria sale cada 30 s).
+
+### Diagnostico
+
+Cada 10 s el robot imprime por serial:
+
+```
+[diag] canal=6 wifi=si nube=si recibidos=42 perdidos=3 (7%) reinicios_pulsera=0
+```
+
+`perdidos` sale de los saltos del contador `seq` de la pulsera (`lib/link_stats`). Cada 60 s la pulsera imprime:
+
+```
+[radio] canal=6 ok=40 sin_ack=5 busquedas=2 cambios=1
+```
+
+Cuando cambia de canal ademas escribe `[radio] robot encontrado en canal N (antes M)`.
+
+**Importante:** la pulsera debe compilarse con `BAND_COMM_MODE_ESPNOW` (en `platformio.ini` de la pulsera figura `BAND_COMM_MODE_WIFI_DEBUG`, que NO usa ESP-NOW).
+
+## Hora para la pulsera
+
+La pulsera no tiene reloj propio: usa la hora del robot para su horario de reposo (modo noche/dia). El robot obtiene la hora por NTP (`ClockManager`, necesita Wi-Fi al menos una vez desde el arranque) y se la manda con el mensaje `HORA` (UTC en segundos + zona `DESK_UTC_OFFSET_MIN = -300` minutos, Ecuador).
+
+- `robot_link` decide **cuando**: al aparecer la pulsera (3 envios seguidos), tras un reinicio de la pulsera y despues cada 6 h.
+- `CommManager::actualizarHora()` la envia por ESP-NOW y solo la da por entregada si la radio de la pulsera devuelve el **ACK**; si no, reintenta cada 5 s.
+- Sin hora NTP todavia, el robot imprime una vez `[hora] la pulsera pide la hora, pero el robot aun no tiene hora NTP` y espera.
+
+Salida esperada en el serial del robot:
+
+```
+[hora] HORA enviada: epoch=1790000000 zona=-300 min
+[hora] HORA recibida por la pulsera (ACK)
+```
+
+y en el de la pulsera: `[comm] hora recibida del robot: epoch=... zona=-300 min -> hora local N (ok)`.
+
+## Estado del aviso de caida
+
+La pantalla "CAIDA CONFIRMADA" ya no dice siempre "pendiente de red": muestra lo que paso con el aviso al cuidador (el evento de caida CONFIRMADA que se publica en ThingsBoard) y se actualiza sola.
+
+| Pantalla (OLED derecho) | Significado |
+|---|---|
+| `Enviando aviso` / `al cuidador...` | Esta en la cola y hay conexion con la nube; sale en un instante |
+| `SIN RED: aviso` / `en cola, reintenta` | No hay Wi-Fi o conexion con ThingsBoard; el aviso sigue en cola y sale al volver la red |
+| `Aviso ENVIADO` / `al cuidador` | El robot lo publico por MQTT en ThingsBoard |
+| `Aviso NO enviado` / `Llama al cuidador` | No llego a la nube un aviso confirmado (por ejemplo se perdio el paquete CONFIRMADA de la pulsera) o se descarto de la cola llena |
+| `Nube sin configurar` / `Llama al cuidador` | Falta `include/cloud_secrets.h` |
+
+"Enviado" quiere decir que el robot lo publico; que ThingsBoard dispare la alarma o el correo se confirma en su dashboard. La logica esta en `lib/cloud_outbox` (`cloud_outbox_alert_status`, `cloud_alert_show`) y se prueba en el PC.

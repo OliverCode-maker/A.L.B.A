@@ -43,7 +43,7 @@ void test_telemetry_without_timestamp_omits_ts(void)
     char out[128];
     const alba_telemetry_t t = tel(62, 97, 84);
     alba_telemetry_to_tb(&t, 0, out, sizeof out);
-    TEST_ASSERT_EQUAL_STRING("{\"values\":{\"bpm\":62,\"spo2\":97,\"bat\":84}}", out);
+    TEST_ASSERT_EQUAL_STRING("{\"bpm\":62,\"spo2\":97,\"bat\":84}", out);
 }
 
 void test_telemetry_omits_invalid_keys(void)
@@ -84,7 +84,7 @@ void test_event_all_alerts_and_states(void)
     char out[160];
     alba_event_t e = evt(ALBA_ALERTA_VIGILIA_TRIGGER, 89, ALBA_CONF_CONFIRMADA);
     alba_event_to_tb(&e, 0, out, sizeof out);
-    TEST_ASSERT_EQUAL_STRING("{\"values\":{\"alert\":\"VIGILIA_TRIGGER\",\"confirm\":\"CONFIRMADA\",\"value\":89}}", out);
+    TEST_ASSERT_EQUAL_STRING("{\"alert\":\"VIGILIA_TRIGGER\",\"confirm\":\"CONFIRMADA\",\"value\":89}", out);
 
     e = evt(ALBA_ALERTA_BATERIA_BAJA, 15, ALBA_CONF_CONFIRMADA);
     alba_event_to_tb(&e, 0, out, sizeof out);

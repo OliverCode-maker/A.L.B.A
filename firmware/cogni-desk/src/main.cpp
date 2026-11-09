@@ -8,12 +8,14 @@
 #include "WifiManager.h"
 #include "ClockManager.h"
 #include "BuzzerManager.h"
+#include "CloudManager.h"
 
 static desk_app_t app;
 static desk_view_t last_view;
 static bool has_rendered_view = false;
 static environment_reading_t ambiente;
 static health_reading_t last_salud;
+static cloud_alert_show_t last_aviso = CLOUD_SHOW_NOT_SENT;
 
 static bool mismaSalud(const health_reading_t &a, const health_reading_t &b) {
     return a.online == b.online && a.bpm_valid == b.bpm_valid && a.bpm == b.bpm &&
@@ -54,6 +56,7 @@ void setup() {
     if (!initCommunication()) {
         Serial.println(F("ESP-NOW no disponible; interfaz y DHT11 siguen activos."));
     }
+    initCloud();
     if (!initWifiManager()) {
         Serial.println(F("Wi-Fi no pudo iniciar completamente; interfaz local sigue activa."));
     }
@@ -67,6 +70,9 @@ void loop() {
     actualizarWifiManager(now_ms);
     const bool new_environment_sample = actualizarSensores(now_ms);
     procesarComunicacionesBackground(&app, now_ms);
+    const environment_reading_t ambiente_actual = leerAmbiente();
+    const game_result_t resultado_juego = desk_app_game_result(&app);
+    actualizarCloud(now_ms, &ambiente_actual, &resultado_juego);
 
     const button_event_t event = actualizarBotones(now_ms);
     uint16_t ref_seq = 0u;
@@ -79,6 +85,8 @@ void loop() {
     const desk_view_t view = desk_app_view(&app);
     actualizarBuzzer(patronBuzzer(view.screen), now_ms);
     const health_reading_t salud = leerSalud(now_ms);
+    const cloud_alert_show_t aviso =
+        view.screen == DESK_SCREEN_FALL_CONFIRMED ? cloudEstadoAviso() : last_aviso;
     if (!has_rendered_view || view.screen != last_view.screen ||
         view.menu_selection != last_view.menu_selection ||
         view.eyes_closed != last_view.eyes_closed ||
@@ -99,7 +107,9 @@ void loop() {
         view.alarms[2].minute != last_view.alarms[2].minute ||
         view.alarms[2].enabled != last_view.alarms[2].enabled ||
         (view.screen == DESK_SCREEN_ENVIRONMENT && new_environment_sample) ||
-        (view.screen == DESK_SCREEN_HEALTH && !mismaSalud(salud, last_salud))) {
+        (view.screen == DESK_SCREEN_HEALTH && !mismaSalud(salud, last_salud)) ||
+        (view.screen == DESK_SCREEN_FALL_CONFIRMED && aviso != last_aviso)) {
+        last_aviso = aviso;
         ambiente = leerAmbiente();
         mostrarVista(&view, &ambiente, &salud);
         last_salud = salud;

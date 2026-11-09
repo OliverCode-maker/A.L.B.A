@@ -196,6 +196,29 @@ void test_time_clock_wrap_on_robot_side(void)
     TEST_ASSERT_FALSE(robot_link_need_time(&l, 0x00001000u));            // el robot lleva 49 dias: no confundir con "pasaron 6 h"
 }
 
+void test_time_packet_for_band_is_valid_and_keeps_zone(void)
+{
+    alba_time_t packet;
+    alba_pack_time(&packet, 7u, 1800000000u, -300);
+    TEST_ASSERT_EQUAL_INT(ALBA_MSG_HORA, alba_validate(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet)));
+    TEST_ASSERT_EQUAL_UINT32(1800000000u, packet.epoch_s);
+    TEST_ASSERT_EQUAL_INT16(-300, packet.utc_offset_min);
+}
+
+void test_time_not_counted_until_marked_sent(void)
+{
+    robot_link_t l;
+    robot_link_init(&l);
+    alba_telemetry_t t;
+    alba_pack_telemetry(&t, 1u, 1000u, 70u, 97u, 80u);
+    robot_rx_msg_t m;
+    TEST_ASSERT_EQUAL_INT(ROBOT_RX_NEW, robot_link_on_packet(&l, reinterpret_cast<const uint8_t *>(&t), sizeof(t), 1000u, &m));
+    TEST_ASSERT_TRUE(robot_link_need_time(&l, 1000u));
+    TEST_ASSERT_TRUE(robot_link_need_time(&l, 2000u));   // sin robot_link_time_sent sigue pendiente
+    robot_link_time_sent(&l, 2000u);
+    TEST_ASSERT_FALSE(robot_link_need_time(&l, 2001u));
+}
+
 int main(int, char **)
 {
     UNITY_BEGIN();
@@ -217,5 +240,7 @@ int main(int, char **)
     RUN_TEST(test_time_is_resent_every_six_hours);
     RUN_TEST(test_reboot_restarts_the_time_burst);
     RUN_TEST(test_time_clock_wrap_on_robot_side);
+    RUN_TEST(test_time_packet_for_band_is_valid_and_keeps_zone);
+    RUN_TEST(test_time_not_counted_until_marked_sent);
     return UNITY_END();
 }

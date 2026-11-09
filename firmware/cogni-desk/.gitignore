@@ -3,3 +3,6 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# token y datos de la nube (no subir)
+include/cloud_secrets.h
