@@ -260,3 +260,17 @@ Salida esperada en el serial del robot:
 ```
 
 y en el de la pulsera: `[comm] hora recibida del robot: epoch=... zona=-300 min -> hora local N (ok)`.
+
+## Estado del aviso de caida
+
+La pantalla "CAIDA CONFIRMADA" ya no dice siempre "pendiente de red": muestra lo que paso con el aviso al cuidador (el evento de caida CONFIRMADA que se publica en ThingsBoard) y se actualiza sola.
+
+| Pantalla (OLED derecho) | Significado |
+|---|---|
+| `Enviando aviso` / `al cuidador...` | Esta en la cola y hay conexion con la nube; sale en un instante |
+| `SIN RED: aviso` / `en cola, reintenta` | No hay Wi-Fi o conexion con ThingsBoard; el aviso sigue en cola y sale al volver la red |
+| `Aviso ENVIADO` / `al cuidador` | El robot lo publico por MQTT en ThingsBoard |
+| `Aviso NO enviado` / `Llama al cuidador` | No llego a la nube un aviso confirmado (por ejemplo se perdio el paquete CONFIRMADA de la pulsera) o se descarto de la cola llena |
+| `Nube sin configurar` / `Llama al cuidador` | Falta `include/cloud_secrets.h` |
+
+"Enviado" quiere decir que el robot lo publico; que ThingsBoard dispare la alarma o el correo se confirma en su dashboard. La logica esta en `lib/cloud_outbox` (`cloud_outbox_alert_status`, `cloud_alert_show`) y se prueba en el PC.

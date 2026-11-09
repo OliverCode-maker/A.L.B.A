@@ -135,6 +135,74 @@ void test_longest_messages_fit_in_the_buffer(void)
     TEST_ASSERT_EQUAL_CHAR('}', cloud_outbox_peek(&o)[strlen(cloud_outbox_peek(&o)) - 1u]);
 }
 
+static alba_event_t fall(uint16_t seq, alba_confirmacion_t conf)
+{
+    alba_event_t e;
+    alba_pack_event(&e, seq, 5000u, ALBA_ALERTA_CAIDA_DETECTADA, 40u, conf);
+    return e;
+}
+
+void test_alert_status_none_until_a_confirmed_fall(void)
+{
+    TEST_ASSERT_EQUAL_INT(CLOUD_ALERT_NONE, cloud_outbox_alert_status(&o));
+    const alba_event_t pending = fall(1u, ALBA_CONF_PENDIENTE);
+    cloud_outbox_push_event(&o, &pending, 0u);
+    TEST_ASSERT_EQUAL_INT(CLOUD_ALERT_NONE, cloud_outbox_alert_status(&o));
+}
+
+void test_confirmed_fall_is_pending_then_sent_when_published(void)
+{
+    const alba_event_t pending = fall(1u, ALBA_CONF_PENDIENTE);
+    const alba_event_t confirmed = fall(2u, ALBA_CONF_CONFIRMADA);
+    cloud_outbox_push_event(&o, &pending, 0u);
+    cloud_outbox_push_event(&o, &confirmed, 0u);
+    TEST_ASSERT_EQUAL_INT(CLOUD_ALERT_PENDING, cloud_outbox_alert_status(&o));
+    cloud_outbox_pop(&o);   /* sale el PENDIENTE: el aviso confirmado sigue en cola */
+    TEST_ASSERT_EQUAL_INT(CLOUD_ALERT_PENDING, cloud_outbox_alert_status(&o));
+    cloud_outbox_pop(&o);   /* sale el aviso confirmado */
+    TEST_ASSERT_EQUAL_INT(CLOUD_ALERT_SENT, cloud_outbox_alert_status(&o));
+}
+
+void test_new_confirmed_fall_after_sent_goes_back_to_pending(void)
+{
+    const alba_event_t confirmed = fall(2u, ALBA_CONF_CONFIRMADA);
+    cloud_outbox_push_event(&o, &confirmed, 0u);
+    cloud_outbox_pop(&o);
+    TEST_ASSERT_EQUAL_INT(CLOUD_ALERT_SENT, cloud_outbox_alert_status(&o));
+    const alba_event_t again = fall(9u, ALBA_CONF_CONFIRMADA);
+    cloud_outbox_push_event(&o, &again, 0u);
+    TEST_ASSERT_EQUAL_INT(CLOUD_ALERT_PENDING, cloud_outbox_alert_status(&o));
+}
+
+void test_other_alerts_do_not_change_the_fall_status(void)
+{
+    alba_event_t low_battery;
+    alba_pack_event(&low_battery, 3u, 1000u, ALBA_ALERTA_BATERIA_BAJA, 10u, ALBA_CONF_CONFIRMADA);
+    cloud_outbox_push_event(&o, &low_battery, 0u);
+    TEST_ASSERT_EQUAL_INT(CLOUD_ALERT_NONE, cloud_outbox_alert_status(&o));
+}
+
+void test_pending_fall_dropped_from_a_full_queue_is_lost(void)
+{
+    const alba_event_t confirmed = fall(2u, ALBA_CONF_CONFIRMADA);
+    cloud_outbox_push_event(&o, &confirmed, 0u);
+    for (unsigned i = 0u; i < CLOUD_OUTBOX_CAP; i++) {
+        alba_event_t other = fall((uint16_t)(10u + i), ALBA_CONF_PENDIENTE);
+        cloud_outbox_push_event(&o, &other, 0u);   /* todo son alertas: se pierde la mas antigua */
+    }
+    TEST_ASSERT_EQUAL_INT(CLOUD_ALERT_LOST, cloud_outbox_alert_status(&o));
+}
+
+void test_alert_show_combines_status_cloud_and_network(void)
+{
+    TEST_ASSERT_EQUAL_INT(CLOUD_SHOW_CLOUD_OFF, cloud_alert_show(CLOUD_ALERT_SENT, false, true));
+    TEST_ASSERT_EQUAL_INT(CLOUD_SHOW_NOT_SENT, cloud_alert_show(CLOUD_ALERT_NONE, true, true));
+    TEST_ASSERT_EQUAL_INT(CLOUD_SHOW_NOT_SENT, cloud_alert_show(CLOUD_ALERT_LOST, true, true));
+    TEST_ASSERT_EQUAL_INT(CLOUD_SHOW_SENDING, cloud_alert_show(CLOUD_ALERT_PENDING, true, true));
+    TEST_ASSERT_EQUAL_INT(CLOUD_SHOW_NO_NETWORK, cloud_alert_show(CLOUD_ALERT_PENDING, true, false));
+    TEST_ASSERT_EQUAL_INT(CLOUD_SHOW_SENT, cloud_alert_show(CLOUD_ALERT_SENT, true, false));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -148,5 +216,11 @@ int main(void)
     RUN_TEST(test_full_outbox_drops_telemetry_before_alerts);
     RUN_TEST(test_full_outbox_of_only_alerts_drops_the_oldest_alert);
     RUN_TEST(test_longest_messages_fit_in_the_buffer);
+    RUN_TEST(test_alert_status_none_until_a_confirmed_fall);
+    RUN_TEST(test_confirmed_fall_is_pending_then_sent_when_published);
+    RUN_TEST(test_new_confirmed_fall_after_sent_goes_back_to_pending);
+    RUN_TEST(test_other_alerts_do_not_change_the_fall_status);
+    RUN_TEST(test_pending_fall_dropped_from_a_full_queue_is_lost);
+    RUN_TEST(test_alert_show_combines_status_cloud_and_network);
     return UNITY_END();
 }

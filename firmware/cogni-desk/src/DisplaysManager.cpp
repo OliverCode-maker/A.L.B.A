@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "DisplaysManager.h"
+#include "CloudManager.h"
 #include "DeskConfig.h"
 
 #define SCREEN_WIDTH 128
@@ -330,8 +331,18 @@ void mostrarVista(const desk_view_t *vista, const environment_reading_t *ambient
     oledIzquierdo.drawLine(61, 41, 78, 22, SSD1306_WHITE);
     oledIzquierdo.display();
     escribirLinea(oledDerecho, 4, "CAIDA CONFIRMADA");
-    escribirLinea(oledDerecho, 22, "Aviso cuidador");
-    escribirLinea(oledDerecho, 38, "pendiente de red");
+    const char *linea1 = "Aviso NO enviado";
+    const char *linea2 = "Llama al cuidador";
+    switch (cloudEstadoAviso()) {
+      case CLOUD_SHOW_SENT:       linea1 = "Aviso ENVIADO";    linea2 = "al cuidador"; break;
+      case CLOUD_SHOW_SENDING:    linea1 = "Enviando aviso";   linea2 = "al cuidador..."; break;
+      case CLOUD_SHOW_NO_NETWORK: linea1 = "SIN RED: aviso";   linea2 = "en cola, reintenta"; break;
+      case CLOUD_SHOW_CLOUD_OFF:  linea1 = "Nube sin configurar"; linea2 = "Llama al cuidador"; break;
+      case CLOUD_SHOW_NOT_SENT:
+      default: break;
+    }
+    escribirLinea(oledDerecho, 22, linea1);
+    escribirLinea(oledDerecho, 38, linea2);
     escribirLinea(oledDerecho, 54, "OK: Continuar");
   } else if (vista->screen == DESK_SCREEN_ENVIRONMENT) {
     escribirLinea(oledIzquierdo, 4, "AMBIENTE");

@@ -209,6 +209,15 @@ bool cloudConectado(void) {
   return connected_flag;
 }
 
+cloud_alert_show_t cloudEstadoAviso(void) {
+  static cloud_alert_status_t last_status = CLOUD_ALERT_NONE;
+  if (enabled && take()) {
+    last_status = cloud_outbox_alert_status(&outbox);
+    give();
+  }
+  return cloud_alert_show(last_status, enabled, connected_flag);
+}
+
 uint32_t cloudPublicados(void) {
   return published_count;
 }

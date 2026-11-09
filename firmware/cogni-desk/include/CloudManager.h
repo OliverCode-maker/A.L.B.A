@@ -6,6 +6,7 @@
 
 #include "SensorManager.h"
 #include "alba_protocol.h"
+#include "cloud_outbox.h"
 #include "cogni_game.h"
 
 /* Publica a ThingsBoard por MQTT los datos de la pulsera y del propio robot.
@@ -23,6 +24,9 @@ void cloudOnEvent(const alba_event_t *event);
 void actualizarCloud(uint32_t now_ms, const environment_reading_t *ambiente, const game_result_t *juego);
 
 bool cloudConectado(void);
+
+/* Que debe decir la pantalla de caida confirmada sobre el aviso al cuidador. */
+cloud_alert_show_t cloudEstadoAviso(void);
 uint32_t cloudPublicados(void);
 
 #endif
