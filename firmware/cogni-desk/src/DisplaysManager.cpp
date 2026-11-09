@@ -270,7 +270,8 @@ static void escribirLinea(Adafruit_SSD1306 &oled, int y, const char *texto) {
   oled.println(texto);
 }
 
-void mostrarVista(const desk_view_t *vista, const environment_reading_t *ambiente) {
+void mostrarVista(const desk_view_t *vista, const environment_reading_t *ambiente,
+                  const health_reading_t *salud) {
   if (vista == nullptr) return;
 
   if (vista->screen == DESK_SCREEN_SPLASH) {
@@ -346,6 +347,35 @@ void mostrarVista(const desk_view_t *vista, const environment_reading_t *ambient
       escribirLinea(oledDerecho, 24, value);
     }
     escribirLinea(oledDerecho, 48, "IZQ: Volver");
+  } else if (vista->screen == DESK_SCREEN_HEALTH) {
+    if (salud == nullptr || !salud->online) {
+      escribirLinea(oledDerecho, 4, "SALUD");
+      escribirLinea(oledDerecho, 22, "Sin senal de la");
+      escribirLinea(oledDerecho, 34, "pulsera");
+      escribirLinea(oledIzquierdo, 52, "Revisa que este");
+    } else {
+      char value[24];
+      escribirLinea(oledIzquierdo, 4, "PULSO");
+      oledIzquierdo.setTextSize(2);
+      if (salud->bpm_valid) snprintf(value, sizeof(value), "%u bpm", static_cast<unsigned>(salud->bpm));
+      else snprintf(value, sizeof(value), "-- bpm");
+      oledIzquierdo.setCursor(20, 24);
+      oledIzquierdo.print(value);
+      oledIzquierdo.setTextSize(1);
+
+      escribirLinea(oledDerecho, 4, "OXIGENO (SpO2)");
+      oledDerecho.setTextSize(2);
+      if (salud->spo2_valid) snprintf(value, sizeof(value), "%u %%", static_cast<unsigned>(salud->spo2));
+      else snprintf(value, sizeof(value), "-- %%");
+      oledDerecho.setCursor(20, 18);
+      oledDerecho.print(value);
+      oledDerecho.setTextSize(1);
+      if (salud->bat_valid) snprintf(value, sizeof(value), "Bateria: %u%%", static_cast<unsigned>(salud->bat_pct));
+      else snprintf(value, sizeof(value), "Bateria: --");
+      escribirLinea(oledDerecho, 38, value);
+      if (!salud->bpm_valid || !salud->spo2_valid) escribirLinea(oledIzquierdo, 52, "Sin lectura: ponla");
+    }
+    escribirLinea(oledDerecho, 54, "IZQ: Volver");
   } else if (vista->screen == DESK_SCREEN_CLOCK) {
     oledIzquierdo.drawBitmap(32, 0, iconoReloj, 64, 64, SSD1306_WHITE);
     escribirLinea(oledDerecho, 2, "RELOJ");

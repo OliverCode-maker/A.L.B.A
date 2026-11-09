@@ -57,8 +57,14 @@ void test_menu_navigation_opens_environment_and_feature_placeholder(void)
 
     desk_app_on_input(&app, DESK_INPUT_RIGHT, DESK_SPLASH_DURATION_MS + 4u, nullptr);
     desk_app_on_input(&app, DESK_INPUT_OK, DESK_SPLASH_DURATION_MS + 5u, nullptr);
-    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_FEATURE, desk_app_view(&app).screen);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_HEALTH, desk_app_view(&app).screen);   // opcion 2: Salud
     desk_app_on_input(&app, DESK_INPUT_LEFT, DESK_SPLASH_DURATION_MS + 6u, nullptr);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_MENU, desk_app_view(&app).screen);
+
+    desk_app_on_input(&app, DESK_INPUT_RIGHT, DESK_SPLASH_DURATION_MS + 7u, nullptr);
+    desk_app_on_input(&app, DESK_INPUT_OK, DESK_SPLASH_DURATION_MS + 8u, nullptr);
+    TEST_ASSERT_EQUAL_INT(DESK_SCREEN_FEATURE, desk_app_view(&app).screen);  // opcion 3: aun placeholder
+    desk_app_on_input(&app, DESK_INPUT_LEFT, DESK_SPLASH_DURATION_MS + 9u, nullptr);
     TEST_ASSERT_EQUAL_INT(DESK_SCREEN_MENU, desk_app_view(&app).screen);
 }
 

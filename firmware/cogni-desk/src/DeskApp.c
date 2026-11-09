@@ -100,6 +100,8 @@ robot_action_t desk_app_on_input(desk_app_t *app, desk_input_t input, uint32_t n
         } else if (input == DESK_INPUT_OK) {
             if (app->menu_selection == 0u) {
                 app->screen = DESK_SCREEN_ENVIRONMENT;
+            } else if (app->menu_selection == 1u) {
+                app->screen = DESK_SCREEN_HEALTH;
             } else if (app->menu_selection == 3u) {
                 app->screen = DESK_SCREEN_CLOCK;
             } else {
@@ -108,6 +110,7 @@ robot_action_t desk_app_on_input(desk_app_t *app, desk_input_t input, uint32_t n
         }
         break;
     case DESK_SCREEN_ENVIRONMENT:
+    case DESK_SCREEN_HEALTH:
     case DESK_SCREEN_FEATURE:
         if (input == DESK_INPUT_LEFT || input == DESK_INPUT_OK) {
             app->screen = DESK_SCREEN_MENU;

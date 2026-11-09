@@ -34,6 +34,17 @@ reintenta segun `robot_fall`. MQTT aun no esta integrado; una caida confirmada s
 pendiente de aviso al cuidador. Al integrar MQTT, la conexion Wi-Fi debe permanecer en canal 1
 para compartir la radio con ESP-NOW.
 
+## Salud y buzzer
+
+La opcion **Salud** del menu muestra pulso, SpO2 y bateria de la ultima telemetria recibida de la
+pulsera (`leerSalud()` en `CommManager`). Si pasan `DESK_HEALTH_STALE_MS` (90 s) sin telemetria se
+muestra "Sin senal de la pulsera". Un valor "--" significa que la pulsera lo mando como invalido
+(por ejemplo, el MAX30102 no detecta la muneca, o la pulsera no mide su bateria).
+
+El buzzer esta en el GPIO 14 (`DESK_BUZZER_GPIO`) y se maneja con `tone()`, asi que sirve activo o
+pasivo. Suena con tres patrones segun la pantalla: pitidos rapidos en "posible caida", largos en
+"caida confirmada" (ambos hasta pulsar OK), y suaves en "medicamento" (maximo 60 s).
+
 ## Configuracion Wi-Fi
 
 `WifiManager` intenta las dos credenciales EEPROM guardadas y, si ninguna conecta, inicia el

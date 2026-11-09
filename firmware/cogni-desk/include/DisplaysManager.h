@@ -2,6 +2,7 @@
 #define DISPLAYS_MANAGER_H
 
 #include "DeskApp.h"
+#include "HealthData.h"
 #include "SensorManager.h"
 
 #include <Wire.h>
@@ -15,6 +16,7 @@ bool initDisplays(void);
 void mostrarSplashScreenALBA(void);
 void mostrarOjosALBA(void);
 void mostrarOjosCerradosALBA(void);
-void mostrarVista(const desk_view_t *vista, const environment_reading_t *ambiente);
+void mostrarVista(const desk_view_t *vista, const environment_reading_t *ambiente,
+                  const health_reading_t *salud);
 
 #endif
