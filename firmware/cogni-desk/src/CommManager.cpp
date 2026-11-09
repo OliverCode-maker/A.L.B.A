@@ -53,10 +53,15 @@ bool checkEspResult(esp_err_t result, const char *operation) {
   return false;
 }
 
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 void onReceive(const esp_now_recv_info_t *info, const uint8_t *data, int length) {
-  if (info == nullptr || info->src_addr == nullptr || data == nullptr ||
+  const uint8_t *source_mac = info == nullptr ? nullptr : info->src_addr;
+#else
+void onReceive(const uint8_t *source_mac, const uint8_t *data, int length) {
+#endif
+  if (source_mac == nullptr || data == nullptr ||
       length <= 0 || length > static_cast<int>(ALBA_ESPNOW_MAX_PAYLOAD) ||
-      memcmp(info->src_addr, band_mac, ESP_NOW_ETH_ALEN) != 0) {
+      memcmp(source_mac, band_mac, ESP_NOW_ETH_ALEN) != 0) {
     return;
   }
 
