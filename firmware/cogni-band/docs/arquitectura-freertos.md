@@ -4,6 +4,9 @@ Placa: **ESP32-S3 Super Mini** (PlatformIO con ESP-IDF: `lolin_s3_mini`).
 I2C en SDA = GPIO6, SCL = GPIO7;
 MPU6050 y MAX30102 comparten el bus y no tienen el pin INT conectado (se leen por sondeo).
 Pines en `include/band_pins.h`, parametros en `include/band_config.h`.
+El entorno `lolin-s3-mini` de `platformio.ini` usa sensores reales, tiempos reales
+(`BAND_SIM=0`, `BAND_SIM_FAST=0`) y **Wi-Fi debug**. `band_config.h` usa ESP-NOW
+como valor de reserva si no se define `BAND_COMM_MODE` en la compilacion.
 
 ## Idea en una frase
 
@@ -19,14 +22,16 @@ ventanas a `tFallModel`, que corre TensorFlow Lite Micro fuera del ciclo de 100 
                   +------qModelResult-----+
                   |  ^                  |  qTx (alertas, telemetria)
    actividad      |  | qCmd             v
-   (cada 1 s)     |  | (CANCELAR)    +-------+  ESP-NOW   +-------+
-                  v  |               | tComm | ---------> | robot |
- PPG --15..300 s-> tVitals ---------> |       | <--------- |       |
-                  ^    |   qTx        +-------+ HORA,      +-------+
+   (cada 1 s)     |  | (CANCELAR)    +-------+ ESP-NOW   +-------+
+                  v  |               | tComm | --------> | robot |
+ PPG --15..300 s-> tVitals ---------> |       | <-------- |       |
+                  ^    |   qTx        +-------+ HORA,     +-------+
    hora local     |    v latest          ^     CANCELAR
    (band_clock)   |   tSystem            | qRx (callback de la radio)
                        telemetria + bateria + estadisticas
 ```
+En modo Wi-Fi debug, `tComm` envia los mismos eventos y telemetria como JSON por UDP
+a la computadora; el receptor no sustituye al robot ni acepta comandos.
 
 ## Tareas
 
@@ -34,14 +39,16 @@ ventanas a `tFallModel`, que corre TensorFlow Lite Micro fuera del ciclo de 100 
 |--------------|-----------|--------------------------------------|-------|----------|
 | `tFall`      | 5 (alta)  | 10 ms exactos (`vTaskDelayUntil`)    | 4 kB  | Lee el IMU, mantiene la ventana 200x6 y pasa la actigrafia cada 1 s |
 | `tComm`      | 4         | espera `qTx` (20 ms max)             | 4 kB  | Unica duena de la radio: arma paquetes, envia, reintenta alertas, procesa HORA y CANCELAR |
-| `tVitals`    | 3         | 60 s dormido / 15 s sospecha / 300 s despierto (lo dicta el detector) | 4 kB | Mide pulso, corre el detector de despertar |
-| `tSystem`    | 2 (baja)  | 1 s                                  | 4 kB  | Telemetria cada 30 s, nivel de bateria y aviso de bateria baja, estadisticas |
-| `tFallModel` | 2 (baja; 6 solo al iniciar) | cada 25 muestras (250 ms) | 16 kB | Normaliza y ejecuta el modelo int8; devuelve su puntuacion a `tFall` |
+| `tVitals`    | 3         | 60 s dormido / 15 s sospecha / 300 s despierto; demo rapida: 2 / 1 / 5 s | 4 kB | Mide pulso, corre el detector de despertar |
+| `tSystem`    | 2 (baja)  | 1 s                                  | 4 kB  | Telemetria y lectura de bateria cada 30 s (5 s en demo rapida); estadisticas cada 300 s en modo normal (30 s en demo rapida) |
+| `tFallModel` | 2 (baja; 6 durante inicializacion) | primera ventana tras 200 muestras (2 s); despues cada 25 muestras (250 ms) | 16 kB | Normaliza y ejecuta el modelo int8; usa una arena estatica de 64 kB y devuelve resultados a `tFall` |
 
 `tFall` es la mas urgente para muestrear el IMU cada 10 ms. La ventana se entrega con una
 cola de longitud uno (si el modelo se atrasa, conserva la mas reciente); la inferencia corre
 a prioridad baja para no bloquear el muestreo. Una alerta no debe esperar detras
-de la telemetria, por eso `tComm` va por encima de `tVitals`.
+de la telemetria, por eso `tComm` va por encima de `tVitals`. `tFallModel` se crea y
+se inicializa antes que las otras tareas; al terminar la inicializacion baja de prioridad
+6 a 2. Ninguna tarea esta fijada a un nucleo.
 
 ## Quien es dueno de que (regla de oro)
 
@@ -66,14 +73,16 @@ piden cosas por cola (p. ej. cancelar una caida) en vez de llamar a su funcion.
 ## Flujos importantes
 
 **Caida.** `tFall` agrega aceleracion y giroscopio a una ventana de 2 s (200x6).
-Cada 25 muestras envia una ventana a `tFallModel`; una puntuacion >= 0.6 genera
-`PENDIENTE` por `qTx` -> `tComm` lo envia y arma la compuerta con
+Al llenarse por primera vez, y despues cada 25 muestras, envia una ventana a `tFallModel`.
+Una alerta requiere dos ventanas positivas del modelo (puntuacion >= 0.6) dentro de 500 ms,
+y que las reglas clasifiquen al menos una como `pre-impacto` o `caida`. Entonces se genera
+`PENDIENTE` por `qTx` -> `tComm`, que lo envia y arma la compuerta con
 su `seq`. El robot muestra "¿Estas bien?". Si responde, manda `CANCELAR(ref_seq)`; `tComm` solo lo
 acepta si coincide con la caida pendiente y avisa a `tFall` por `qCmd` -> `CANCELADA`. Si pasan 20 s
 sin respuesta -> `CONFIRMADA`. Un CANCELAR repetido, tardio o de otra caida se ignora.
 
 El modelo usa solo `AccX/Y/Z` en g y `GyrX/Y/Z` en grados/s, en ese orden y a 100 Hz.
-Antes de guardar cada muestra, tFallModel rota los ejes del MPU6050 al marco del
+Al agregar cada muestra a la ventana, `fall_model_append_sample` rota los ejes del MPU6050 al marco del
 dataset: `(X, Y, Z) = (MPU.X, -MPU.Z, MPU.Y)` tanto para aceleracion como para giroscopio.
 Esta rotacion se eligio porque, en las lecturas en reposo, la gravedad aparece en `+Z`
 de la pulsera y en `-Y` en el entrenamiento; requiere mantener la misma orientacion fisica.
@@ -82,9 +91,11 @@ calculadas solo sobre sujetos de entrenamiento; estos valores se generan en
 `models/fall_detector/fall_model_preprocess.h`.
 El umbral int8 por defecto es 0.6 para reducir falsos positivos; subirlo reduce tambien
 el recall y debe calibrarse con datos de movimientos reales de la pulsera.
-Para depurar en la placa, tFall imprime una vez por segundo la probabilidad, el pico de
-aceleracion de la ventana y el umbral, incluso si no se genera una alerta. Estas puntuaciones
-sirven para diagnostico; para reentrenar se necesitan tambien muestras IMU crudas etiquetadas.
+Para depurar, el log `[comparacion]` informa como maximo una vez por segundo la clase de las
+reglas, la prediccion y probabilidad del modelo y las estadisticas de concordancia. En modo
+Wi-Fi debug, se envia ademas por UDP un JSON por ventana que incluye el pico de aceleracion.
+Estas puntuaciones sirven para diagnostico; para reentrenar se necesitan tambien muestras IMU
+crudas etiquetadas.
 
 **Despertar.** `tVitals` toma pulso al ritmo que pide el detector, con la actigrafia de `tFall` y la hora
 local de `band_clock` (si aun no hay hora, se omite solo la ventana 4-11 h). Un disparo -> `VIGILIA_TRIGGER`.
@@ -101,7 +112,6 @@ la da por desconocida si pasan 48 h.
 | IMU y PPG | Reales por I2C con `BAND_SIM=0`; simulados con `BAND_SIM=1` |
 | Modelo de caidas | TFLite Micro int8; validar inferencia, latencia y falsas alarmas en la placa |
 | Drivers MPU6050 / MAX30102 | Integrados; validar lecturas y calibracion en la placa |
-| ESP-NOW | Unicast al peer configurado; canal y MAC en `include/band_config.h` |
 | Medicion de bateria | ADC1 en GPIO1, calibrado y con divisor 2:1; validar el montaje real |
 
 La frontera esta en `src/band_port.h`: las tareas solo llaman a `port_*`.
@@ -127,7 +137,8 @@ del protocolo en JSON. El modo se selecciona con `BAND_COMM_MODE` en `platformio
 `BAND_COMM_MODE_ESPNOW` usa el enlace unicast al robot configurado en
 `include/band_config.h` (`BAND_ESPNOW_PEER_MAC` y `BAND_ESPNOW_CHANNEL`);
 los paquetes ESP-NOW actualmente no están cifrados. `BAND_COMM_MODE_WIFI_DEBUG` permite
-probar sin el robot. Cuando el detector confirma dos ventanas consecutivas, envía además un evento
+probar sin el robot. Cuando hay dos ventanas positivas del modelo dentro de 500 ms y al menos
+una recibe apoyo de las reglas, envía además un evento
 `fall_candidate`; el receptor muestra
 **CAIDA PROBABLE DETECTADA** y pausa la salida normal
 durante tres segundos mientras sigue recibiendo datos. El firmware transmite por broadcast a
@@ -197,13 +208,3 @@ clasificador es más preciso sobre las mismas muestras. Para una comparación di
 hace falta un conjunto común con canales, unidades y etiquetas verificados, idealmente
 capturado con la pulsera en la muñeca.
 
-## Por decidir / pendiente
-
-1. **Nucleos del S3.** Hoy las tareas no estan ancladas (`xTaskCreate`). Con ESP-NOW activo, probar
-   `tFall` en el nucleo 1 y la radio en el 0 (`xTaskCreatePinnedToCore`) y medir la fluidez a 100 Hz.
-2. **Bus I2C compartido.** IMU (100 Hz) y PPG (rafagas largas) usan el mismo bus con mutex.
-   `port_ppg_read` cede CPU entre bloques para que `tFall` mantenga su periodo.
-3. **ACK de eventos criticos.** Hoy se reintenta si falla el envio local; falta que el robot confirme la recepcion.
-4. **Modos de energia** (ACTIVO / REPOSO / NO PUESTA) y la tabla de consumo corregida para el informe.
-5. **Tamano de pilas.** Medir en la placa (`uxTaskGetStackHighWaterMark`, se imprime cada 30 s) y ajustar.
-6. **Boton / vibrador / LED.** Sin definir; mientras tanto la cancelacion es desde el robot.
